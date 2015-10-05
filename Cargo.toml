@@ -1,0 +1,12 @@
+[package]
+name = "zopfli"
+version = "0.1.0"
+authors = ["Szabolcs Berecz <szabolcs.berecz@gmail.com>"]
+
+[dependencies]
+log = "*"
+libc = "*"
+
+[dev-dependencies]
+compress = "*"
+flate2 = "*"
