@@ -1,4 +1,73 @@
+//! Several utilities, including: #defines to try different compression results,
+//! basic deflate specification values and generic program options.
 
+/// Minimum and maximum length that can be encoded in deflate.
+const MAX_MATCH: usize = 258;
+const MIN_MATCH: usize = 3;
+
+/// The window size for deflate. Must be a power of two. This should be 32768, the
+/// maximum possible by the deflate spec. Anything less hurts compression more than
+/// speed.
+const WINDOW_SIZE: usize = 32768;
+
+/// The window mask used to wrap indices into the window. This is why the
+/// window size must be a power of two.
+const WINDOW_MASK: usize = WINDOW_SIZE - 1;
+
+/// A block structure of huge, non-smart, blocks to divide the input into, to allow
+/// operating on huge files without exceeding memory, such as the 1GB wiki9 corpus.
+/// The whole compression algorithm, including the smarter block splitting, will
+/// be executed independently on each huge block.
+/// Dividing into huge blocks hurts compression, but not much relative to the size.
+/// Set this to, for example, 20MB (20000000). Set it to 0 to disable master blocks.
+const MASTER_BLOCK_SIZE: usize = 20000000;
+
+/// Used to initialize costs for example
+const LARGE_FLOAT: f64 = 1e30;
+
+/// For longest match cache. max 256. Uses huge amounts of memory but makes it
+/// faster. Uses this many times three bytes per single byte of the input data.
+/// This is so because longest match finding has to find the exact distance
+/// that belongs to each length for the best lz77 strategy.
+/// Good values: e.g. 5, 8.
+const CACHE_LENGTH: usize = 8;
+
+/// limit the max hash chain hits for this hash value. This has an effect only
+/// on files where the hash value is the same very often. On these files, this
+/// gives worse compression (the value should ideally be 32768, which is the
+/// ZOPFLI_WINDOW_SIZE, while zlib uses 4096 even for best level), but makes it
+/// faster on some specific files.
+/// Good value: e.g. 8192.
+const MAX_CHAIN_HITS: usize = 8192;
+
+/// Whether to use the longest match cache for ZopfliFindLongestMatch. This cache
+/// consumes a lot of memory but speeds it up. No effect on compression size.
+const LONGEST_MATCH_CACHE: bool = true;
+
+/// Enable to remember amount of successive identical bytes in the hash chain for
+/// finding longest match
+/// required for ZOPFLI_HASH_SAME_HASH and ZOPFLI_SHORTCUT_LONG_REPETITIONS
+/// This has no effect on the compression result, and enabling it increases speed.
+const HASH_SAME: bool = true;
+
+/// Switch to a faster hash based on the info from ZOPFLI_HASH_SAME once the
+/// best length so far is long enough. This is way faster for files with lots of
+/// identical bytes, on which the compressor is otherwise too slow. Regular files
+/// are unaffected or maybe a tiny bit slower.
+/// This has no effect on the compression result, only on speed.
+const HASH_SAME_HASH: bool = true;
+
+/// Enable this, to avoid slowness for files which are a repetition of the same
+/// character more than a multiple of ZOPFLI_MAX_MATCH times. This should not affect
+/// the compression result.
+const SHORTCUT_LONG_REPETITIONS: bool = true;
+
+/// Whether to use lazy matching in the greedy LZ77 implementation. This gives a
+/// better result of ZopfliLZ77Greedy, but the effect this has on the optimal LZ77
+/// varies from file to file.
+const LAZY_MATCHING: bool = true;
+
+/// Gets the amount of extra bits for the given dist, cfr. the DEFLATE spec.
 fn get_dist_extra_bits(dist: i32) -> i32 {
     if dist < 5 {
         0
@@ -7,6 +76,7 @@ fn get_dist_extra_bits(dist: i32) -> i32 {
     }
 }
 
+/// Gets value of the extra bits for the given dist, cfr. the DEFLATE spec.
 fn get_dist_extra_bits_value(dist: i32) -> i32 {
     if dist < 5 {
         0
@@ -16,6 +86,7 @@ fn get_dist_extra_bits_value(dist: i32) -> i32 {
     }
 }
 
+/// Gets the symbol for the given dist, cfr. the DEFLATE spec.
 fn get_dist_symbol(dist: i32) -> i32 {
     if dist < 5 {
         dist - 1
@@ -26,6 +97,7 @@ fn get_dist_symbol(dist: i32) -> i32 {
     }
 }
 
+/// Gets the amount of extra bits for the given length, cfr. the DEFLATE spec.
 fn get_length_extra_bits(l: i32) -> i32 {
     const TABLE: [i32; 259] = [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -47,6 +119,7 @@ fn get_length_extra_bits(l: i32) -> i32 {
     TABLE[l as usize]
 }
 
+/// Gets value of the extra bits for the given length, cfr. the DEFLATE spec.
 fn get_length_extra_bits_value(l: i32) -> i32 {
     const TABLE: [i32; 259] = [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 2, 3, 0,
@@ -64,7 +137,8 @@ fn get_length_extra_bits_value(l: i32) -> i32 {
     TABLE[l as usize]
 }
 
-/// Returns symbol in range [257-285] (inclusive).
+/// Gets the symbol for the given length, cfr. the DEFLATE spec.
+/// Returns the symbol in the range [257-285] (inclusive)
 fn get_length_symbol(l: i32) -> i32 {
     static TABLE: [i32; 259] = [
         0, 0, 0, 257, 258, 259, 260, 261, 262, 263, 264,
@@ -102,8 +176,33 @@ fn get_length_symbol(l: i32) -> i32 {
     TABLE[l as usize]
 }
 
+macro_rules! append_data {
+    ($value:expr, $data:expr, $size:expr) => {{
+        #[inline]
+        unsafe fn append_data<T>(value: T, data: *mut *mut T, size: *mut usize) {
+            if *size == 0 || (*size).is_power_of_two() {
+                // double alloc size if it's a power of two
+                *data =
+                    if *size == 0 {
+                        let malloc_size = ::std::mem::size_of_val(&**data) as ::libc::size_t;
+                        ::std::mem::transmute(::libc::funcs::c95::stdlib::malloc(malloc_size))
+                    } else {
+                        let new_size = (*size * 2 * ::std::mem::size_of_val(&**data)) as ::libc::size_t;
+                        ::std::mem::transmute(::libc::funcs::c95::stdlib::realloc(*data as *mut ::libc::c_void, new_size))
+                    }
+            }
+            *(*data).offset(*size as isize) = value;
+            *size += 1;
+        }
+        append_data($value, &mut $data, &mut $size);
+    }}
+}
+
 #[cfg(test)]
 mod test {
+    use std::ptr;
+    use std::slice;
+
     #[test]
     fn test_get_dist_extra_bits() {
         assert_eq!(super::get_dist_extra_bits(-1), 0);
@@ -165,5 +264,19 @@ mod test {
         assert_eq!(super::get_dist_symbol(24576), 28);
         assert_eq!(super::get_dist_symbol(24577), 29);
         assert_eq!(super::get_dist_symbol(32767), 29);
+    }
+
+    #[test]
+    fn test_append_data() {
+        unsafe {
+            let mut data: *mut i32 = ptr::null_mut();
+            let mut size = 0;
+            append_data!(1i32, data, size);
+            append_data!(2i32, data, size);
+            append_data!(3i32, data, size);
+            append_data!(4i32, data, size);
+            append_data!(5i32, data, size);
+            assert_eq!(slice::from_raw_parts(data, size), [1, 2, 3, 4, 5]);
+        }
     }
 }
