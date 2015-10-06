@@ -56,7 +56,7 @@ unsafe fn get_free_node(lists: *const *mut *mut Node, maxbits: i32, pool: *mut N
             if lists != null_mut() {
                 for i in 0..maxbits*2 {
                     let mut node = *(*lists.offset((i / 2) as isize)).offset((i % 2) as isize);
-                    while (node != null_mut()) {
+                    while node != null_mut() {
                         (*node).in_use = true;
                         node = (*node).tail;
                     }
@@ -113,7 +113,7 @@ unsafe fn boundary_pm(lists: *const *mut *mut Node, maxbits: i32, leaves: *const
             init_node((*leaves.offset(lastcount as isize)).weight, lastcount + 1, (*oldchain).tail, newchain);
         } else {
             init_node(sum, lastcount, *(*lists.offset((index - 1) as isize)).offset(1), newchain);
-            if (!is_final) {
+            if !is_final {
                 // Two lookahead chains of previous list used up, create new ones.
                 boundary_pm(lists, maxbits, leaves, numsymbols, pool, index - 1, false);
                 boundary_pm(lists, maxbits, leaves, numsymbols, pool, index - 1, false);

@@ -1,6 +1,5 @@
 
 use std::mem;
-use std::ptr::{null, null_mut};
 
 use libc::{c_void, size_t};
 use libc::funcs::c95::stdlib::{free, malloc};
@@ -46,12 +45,12 @@ unsafe fn lengths_to_symbols(lengths: *const u32, n: usize, maxbits: u32, symbol
 }
 
 unsafe fn calculate_entropy(count: *const usize, n: usize, bitlengths: *mut f64) {
-    const k_inv_log2: f64 = 1.4426950408889;  // 1.0 / log(2.0)
+    const K_INV_LOG2: f64 = 1.4426950408889;  // 1.0 / log(2.0)
     let mut sum = 0;
     for i in 0..n {
         sum += *count.offset(i as isize);
     }
-    let log2sum = (if sum == 0 { (n as f64).ln() } else { (sum as f64).ln() }) * k_inv_log2;
+    let log2sum = (if sum == 0 { (n as f64).ln() } else { (sum as f64).ln() }) * K_INV_LOG2;
     for i in 0..n {
         // When the count of the symbol is 0, but its cost is requested anyway, it
         // means the symbol will appear at least once anyway, so give it the cost as if
@@ -59,7 +58,7 @@ unsafe fn calculate_entropy(count: *const usize, n: usize, bitlengths: *mut f64)
         if *count.offset(i as isize) == 0 {
             *bitlengths.offset(i as isize) = log2sum;
         } else {
-            *bitlengths.offset(i as isize) = log2sum - (*count.offset(i as isize) as f64).ln() * k_inv_log2;
+            *bitlengths.offset(i as isize) = log2sum - (*count.offset(i as isize) as f64).ln() * K_INV_LOG2;
         }
         // Depending on compiler and architecture, the above subtraction of two
         // floating point numbers may give a negative result very close to zero

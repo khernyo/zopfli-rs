@@ -20,7 +20,7 @@ fn get_dist_symbol(dist: i32) -> i32 {
     if dist < 5 {
         dist - 1
     } else {
-        let l = (31 ^ (dist - 1).leading_zeros()); // log2(dist - 1)
+        let l = 31 ^ (dist - 1).leading_zeros(); // log2(dist - 1)
         let r = ((dist - 1) >> (l - 1)) & 1;
         l as i32 * 2 + r
     }
