@@ -161,7 +161,7 @@ extern {
     fn qsort(base: *mut c_void, nmemb: size_t, size: size_t, compar: extern fn(*const c_void, *const c_void, *const c_void) -> i32);
 }
 
-unsafe fn zopfli_length_limited_code_lengths(frequencies: *const usize, n: i32, maxbits: i32, bitlengths: *mut u32) -> i32 {
+pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, maxbits: i32, bitlengths: *mut u32) -> bool {
     // Amount of symbols with frequency > 0.
     let mut numsymbols = 0;
 
@@ -185,16 +185,16 @@ unsafe fn zopfli_length_limited_code_lengths(frequencies: *const usize, n: i32, 
     // Check special cases and error conditions.
     if (1 << maxbits) < numsymbols {
         free(mem::transmute(leaves));
-        return 1; // Error, too few maxbits to represent symbols.
+        return true; // Error, too few maxbits to represent symbols.
     }
     if numsymbols == 0 {
         free(mem::transmute(leaves));
-        return 0; // No symbols at all. OK.
+        return false; // No symbols at all. OK.
     }
     if numsymbols == 1 {
         *bitlengths.offset((*leaves.offset(0)).count as isize) = 1;
         free(mem::transmute(leaves));
-        return 0; // Only one symbol, give it bitlength 1, not 0. OK.
+        return false; // Only one symbol, give it bitlength 1, not 0. OK.
     }
 
     // Sort the leaves from lightest to heaviest.
@@ -226,5 +226,5 @@ unsafe fn zopfli_length_limited_code_lengths(frequencies: *const usize, n: i32, 
     free(mem::transmute(lists));
     free(mem::transmute(leaves));
     free(mem::transmute(pool.nodes));
-    0
+    false
 }
