@@ -40,33 +40,6 @@ const CACHE_LENGTH: usize = 8;
 /// Good value: e.g. 8192.
 const MAX_CHAIN_HITS: usize = 8192;
 
-/// Whether to use the longest match cache for ZopfliFindLongestMatch. This cache
-/// consumes a lot of memory but speeds it up. No effect on compression size.
-const LONGEST_MATCH_CACHE: bool = true;
-
-/// Enable to remember amount of successive identical bytes in the hash chain for
-/// finding longest match
-/// required for ZOPFLI_HASH_SAME_HASH and ZOPFLI_SHORTCUT_LONG_REPETITIONS
-/// This has no effect on the compression result, and enabling it increases speed.
-const HASH_SAME: bool = true;
-
-/// Switch to a faster hash based on the info from ZOPFLI_HASH_SAME once the
-/// best length so far is long enough. This is way faster for files with lots of
-/// identical bytes, on which the compressor is otherwise too slow. Regular files
-/// are unaffected or maybe a tiny bit slower.
-/// This has no effect on the compression result, only on speed.
-const HASH_SAME_HASH: bool = true;
-
-/// Enable this, to avoid slowness for files which are a repetition of the same
-/// character more than a multiple of ZOPFLI_MAX_MATCH times. This should not affect
-/// the compression result.
-const SHORTCUT_LONG_REPETITIONS: bool = true;
-
-/// Whether to use lazy matching in the greedy LZ77 implementation. This gives a
-/// better result of ZopfliLZ77Greedy, but the effect this has on the optimal LZ77
-/// varies from file to file.
-const LAZY_MATCHING: bool = true;
-
 /// Gets the amount of extra bits for the given dist, cfr. the DEFLATE spec.
 fn get_dist_extra_bits(dist: i32) -> i32 {
     if dist < 5 {
