@@ -4,6 +4,7 @@ extern crate libc;
 
 mod deflate;
 mod gzip_container;
+mod hash;
 mod katajainen;
 mod tree;
 mod util;

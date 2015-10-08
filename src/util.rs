@@ -3,7 +3,7 @@
 
 /// Minimum and maximum length that can be encoded in deflate.
 const MAX_MATCH: usize = 258;
-const MIN_MATCH: usize = 3;
+pub const MIN_MATCH: usize = 3;
 
 /// The window size for deflate. Must be a power of two. This should be 32768, the
 /// maximum possible by the deflate spec. Anything less hurts compression more than
@@ -12,7 +12,7 @@ const WINDOW_SIZE: usize = 32768;
 
 /// The window mask used to wrap indices into the window. This is why the
 /// window size must be a power of two.
-const WINDOW_MASK: usize = WINDOW_SIZE - 1;
+pub const WINDOW_MASK: usize = WINDOW_SIZE - 1;
 
 /// A block structure of huge, non-smart, blocks to divide the input into, to allow
 /// operating on huge files without exceeding memory, such as the 1GB wiki9 corpus.
