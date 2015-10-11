@@ -163,6 +163,36 @@ unsafe fn update_hash_value(h: *mut Hash, c: u8) {
     (*h).val = (((*h).val << HASH_SHIFT) ^ c as i32) & HASH_MASK;
 }
 
+#[cfg(not(feature = "hash-same"))]
+fn update_hash_same(array: *const u8, pos: usize, end: usize, hpos: u16, h: *mut Hash) { }
+
+#[cfg(feature = "hash-same")]
+unsafe fn update_hash_same(array: *const u8, pos: usize, end: usize, hpos: u16, h: *mut Hash) {
+    let mut amount: usize = 0;
+    if *(*h).hash_same.same.offset(((pos - 1) & WINDOW_MASK) as isize) > 1 {
+        amount = (*(*h).hash_same.same.offset(((pos - 1) & WINDOW_MASK) as isize) - 1) as usize;
+    }
+    while pos + amount + 1 < end && *array.offset(pos as isize) == *array.offset((pos + amount + 1) as isize) && amount < (-1 as u16) as usize {
+        amount += 1;
+    }
+    *(*h).hash_same.same.offset(hpos as isize) = amount as u16;
+}
+
+#[cfg(not(feature = "hash-same-hash"))]
+fn update_hash_same_hash(array: *const u8, pos: usize, end: usize, hpos: u16, h: *mut Hash) { }
+
+#[cfg(feature = "hash-same-hash")]
+unsafe fn update_hash_same_hash(array: *const u8, pos: usize, end: usize, hpos: u16, h: *mut Hash) {
+    (*h).hash_same_hash.val2 = (((*(*h).hash_same.same.offset(hpos as isize) - MIN_MATCH as u16) & 255) ^ (*h).val as u16) as i32;
+    *(*h).hash_same_hash.hashval2.offset(hpos as isize) = (*h).hash_same_hash.val2;
+    if *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) != -1 && *(*h).hash_same_hash.hashval2.offset(*(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) as isize) == (*h).hash_same_hash.val2 {
+        *(*h).hash_same_hash.prev2.offset(hpos as isize) = *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) as u16;
+    } else {
+        *(*h).hash_same_hash.prev2.offset(hpos as isize) = hpos;
+    }
+    *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) = hpos as i32;
+}
+
 unsafe fn update_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash) {
     let hpos: u16 = pos as u16 & WINDOW_MASK as u16;
     update_hash_value(h, if pos + MIN_MATCH <= end { *array.offset(pos as isize + MIN_MATCH as isize - 1) } else { 0 });
@@ -174,28 +204,8 @@ unsafe fn update_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash) {
     }
     *(*h).head.offset((*h).val as isize) = hpos as i32;
 
-    if cfg!(feature = "hash-same") {
-        // Update "same".
-        let mut amount: usize = 0;
-        if *(*h).hash_same.same.offset(((pos - 1) & WINDOW_MASK) as isize) > 1 {
-            amount = (*(*h).hash_same.same.offset(((pos - 1) & WINDOW_MASK) as isize) - 1) as usize;
-        }
-        while pos + amount + 1 < end && *array.offset(pos as isize) == *array.offset((pos + amount + 1) as isize) && amount < (-1 as u16) as usize {
-            amount += 1;
-        }
-        *(*h).hash_same.same.offset(hpos as isize) = amount as u16;
-    }
-
-    if cfg!(feature = "hash-same-hash") {
-        (*h).hash_same_hash.val2 = (((*(*h).hash_same.same.offset(hpos as isize) - MIN_MATCH as u16) & 255) ^ (*h).val as u16) as i32;
-        *(*h).hash_same_hash.hashval2.offset(hpos as isize) = (*h).hash_same_hash.val2;
-        if *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) != -1 && *(*h).hash_same_hash.hashval2.offset(*(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) as isize) == (*h).hash_same_hash.val2 {
-            *(*h).hash_same_hash.prev2.offset(hpos as isize) = *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) as u16;
-        } else {
-            *(*h).hash_same_hash.prev2.offset(hpos as isize) = hpos;
-        }
-        *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) = hpos as i32;
-    }
+    update_hash_same(array, pos, end, hpos, h);
+    update_hash_same_hash(array, pos, end, hpos, h);
 }
 
 unsafe fn warmup_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash) {
