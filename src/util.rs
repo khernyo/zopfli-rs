@@ -30,7 +30,7 @@ const LARGE_FLOAT: f64 = 1e30;
 /// This is so because longest match finding has to find the exact distance
 /// that belongs to each length for the best lz77 strategy.
 /// Good values: e.g. 5, 8.
-const CACHE_LENGTH: usize = 8;
+pub const CACHE_LENGTH: usize = 8;
 
 /// limit the max hash chain hits for this hash value. This has an effect only
 /// on files where the hash value is the same very often. On these files, this
