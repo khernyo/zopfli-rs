@@ -18,5 +18,6 @@ for i in `seq 0 $LIMIT`; do
     done
     echo "Using features: ${FEATURES[@]}"
     echo "=============="
+    cargo build --verbose --no-default-features --features "`echo ${FEATURES[@]}`"
     cargo test --verbose --no-default-features --features "`echo ${FEATURES[@]}`"
 done
