@@ -173,6 +173,26 @@ macro_rules! append_data {
     }}
 }
 
+#[macro_export]
+macro_rules! println_err {
+    ($($arg:tt)*) => {
+        match writeln!(&mut ::std::io::stderr(), $($arg)*) {
+            Ok(_)  => (),
+            Err(e) => panic!("Unable to write to stderr: {}", e),
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! print_err {
+    ($($arg:tt)*) => {
+        match write!(&mut ::std::io::stderr(), $($arg)*) {
+            Ok(_)  => (),
+            Err(e) => panic!("Unable to write to stderr: {}", e),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::ptr;

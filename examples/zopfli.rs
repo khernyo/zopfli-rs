@@ -1,6 +1,6 @@
+#[macro_use]
 extern crate zopfli;
 extern crate libc;
-
 
 use std::env;
 use std::fs::File;
@@ -14,15 +14,6 @@ use libc::{c_void, size_t};
 use libc::funcs::c95::stdlib::{free, malloc};
 
 use zopfli::*;
-
-macro_rules! println_err {
-    ($($arg:tt)*) => {
-        match writeln!(&mut ::std::io::stderr(), $($arg)*) {
-            Ok(_)  => (),
-            Err(e) => panic!("Unable to write to stderr: {}", e),
-        }
-    }
-}
 
 fn main() {
     unsafe {
