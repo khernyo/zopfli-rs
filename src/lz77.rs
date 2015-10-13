@@ -8,11 +8,14 @@ use std::ptr::{null, null_mut};
 use libc::funcs::c95::stdlib::{free, malloc};
 use libc::{c_void, size_t};
 
+#[cfg(feature = "longest-match-cache")]
 use super::cache;
+#[cfg(feature = "longest-match-cache")]
+use cache::LongestMatchCache;
+
 use super::hash;
 use super::util;
 
-use cache::LongestMatchCache;
 use hash::Hash;
 use util::{MIN_MATCH, MAX_MATCH, MAX_CHAIN_HITS, WINDOW_MASK, WINDOW_SIZE};
 
@@ -49,6 +52,7 @@ struct BlockState {
     options: *const super::Options,
 
     /// Cache for length/distance pairs found so far.
+    #[cfg(feature = "longest-match-cache")]
     lmc: *mut LongestMatchCache,
 
     /// The start (inclusive) and end (not inclusive) of the current block.
@@ -175,6 +179,11 @@ unsafe fn get_match(scan: *const u8, match_: *const u8, end: *const u8, safe_end
     scan
 }
 
+#[cfg(not(feature = "longest-match-cache"))]
+fn try_get_from_longest_match_cache(s: *const BlockState, pos: usize, limit: *mut usize, sublen: *mut u16, distance: *mut u16, length: *mut u16) -> bool {
+    false
+}
+
 /// Gets distance, length and sublen values from the cache if possible.
 /// Returns 1 if it got the values from the cache, 0 if not.
 /// Updates the limit value to a smaller one if possible with more limited
@@ -213,6 +222,9 @@ unsafe fn try_get_from_longest_match_cache(s: *const BlockState, pos: usize, lim
     }
     false
 }
+
+#[cfg(not(feature = "longest-match-cache"))]
+fn store_in_longest_match_cache(s: *const BlockState, pos: usize, limit: usize, sublen: *const u16, distance: u16, length: u16) { }
 
 /// Stores the found sublen, distance and length in the longest match cache, if
 /// possible.
@@ -319,18 +331,24 @@ unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *const
 
             // Testing the byte at position bestlength first, goes slightly faster.
             if pos + bestlength as usize >= size || *scan.offset(bestlength as isize) == *match_.offset(bestlength as isize) {
-                if cfg!(feature = "hash-same") {
+                #[cfg(not(feature = "hash-same"))]
+                fn do_hash_same(h: *const Hash, pos: usize, limit: usize, scan: *mut *const u8, match_: *mut *const u8, dist: u32) {}
+
+                #[cfg(feature = "hash-same")]
+                unsafe fn do_hash_same(h: *const Hash, pos: usize, limit: usize, scan: *mut *const u8, match_: *mut *const u8, dist: u32) {
                     let same0: u16 = *(*h).hash_same.same.offset((pos & WINDOW_MASK) as isize);
-                    if same0 > 2 && *scan == *match_ {
+                    if same0 > 2 && **scan == **match_ {
                         let same1: u16 = *(*h).hash_same.same.offset(((pos - dist as usize) & WINDOW_MASK) as isize);
                         let mut same: u16 = if same0 < same1 { same0 } else { same1 };
                         if same as usize > limit {
                             same = limit as u16;
                         }
-                        scan = scan.offset(same as isize);
-                        match_ = match_.offset(same as isize);
+                        *scan = (*scan).offset(same as isize);
+                        *match_ = (*match_).offset(same as isize);
                     }
                 }
+                do_hash_same(h, pos, limit, &mut scan, &mut match_, dist);
+
                 scan = get_match(scan, match_, arrayend, arrayend_safe);
                 // The found length.
                 currentlength = (scan as usize - array.offset(pos as isize) as usize) as u16;
@@ -350,16 +368,21 @@ unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *const
             }
         }
 
-        if cfg!(feature = "hash-same-hash") {
+        #[cfg(not(feature = "hash-same-hash"))]
+        fn do_hash_same_hash(h: *const Hash, hhead: *mut *const i32, hprev: *mut *const u16, hhashval: *mut *const i32, hval: *mut i32, bestlength: u16, hpos: u16, p: u16) { }
+
+        #[cfg(feature = "hash-same-hash")]
+        unsafe fn do_hash_same_hash(h: *const Hash, hhead: *mut *const i32, hprev: *mut *const u16, hhashval: *mut *const i32, hval: *mut i32, bestlength: u16, hpos: u16, p: u16) {
             // Switch to the other hash once this will be more efficient.
-            if hhead != (*h).hash_same_hash.head2 && bestlength >= *(*h).hash_same.same.offset(hpos as isize) && (*h).hash_same_hash.val2 == *(*h).hash_same_hash.hashval2.offset(p as isize) {
+            if *hhead != (*h).hash_same_hash.head2 && bestlength >= *(*h).hash_same.same.offset(hpos as isize) && (*h).hash_same_hash.val2 == *(*h).hash_same_hash.hashval2.offset(p as isize) {
                 // Now use the hash that encodes the length and first byte.
-                hhead = (*h).hash_same_hash.head2;
-                hprev = (*h).hash_same_hash.prev2;
-                hhashval = (*h).hash_same_hash.hashval2;
-                hval = (*h).hash_same_hash.val2;
+                *hhead = (*h).hash_same_hash.head2;
+                *hprev = (*h).hash_same_hash.prev2;
+                *hhashval = (*h).hash_same_hash.hashval2;
+                *hval = (*h).hash_same_hash.val2;
             }
         }
+        do_hash_same_hash(h, &mut hhead, &mut hprev, &mut hhashval, &mut hval, bestlength, hpos, p);
 
         pp = p;
         p = *hprev.offset(p as isize);

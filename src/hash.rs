@@ -21,7 +21,7 @@ pub struct Hash {
 }
 
 #[cfg(not(feature = "hash-same-hash"))]
-struct HashSameHash;
+pub struct HashSameHash;
 
 #[cfg(feature = "hash-same-hash")]
 /// Fields with similar purpose as the above hash, but for the second hash with
@@ -79,7 +79,7 @@ impl HashSameHash {
 }
 
 #[cfg(not(feature = "hash-same"))]
-struct HashSame;
+pub struct HashSame;
 
 #[cfg(feature = "hash-same")]
 pub struct HashSame {
