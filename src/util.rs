@@ -1,14 +1,16 @@
+#![macro_use]
+
 //! Several utilities, including: #defines to try different compression results,
 //! basic deflate specification values and generic program options.
 
 /// Minimum and maximum length that can be encoded in deflate.
-const MAX_MATCH: usize = 258;
+pub const MAX_MATCH: usize = 258;
 pub const MIN_MATCH: usize = 3;
 
 /// The window size for deflate. Must be a power of two. This should be 32768, the
 /// maximum possible by the deflate spec. Anything less hurts compression more than
 /// speed.
-const WINDOW_SIZE: usize = 32768;
+pub const WINDOW_SIZE: usize = 32768;
 
 /// The window mask used to wrap indices into the window. This is why the
 /// window size must be a power of two.
@@ -38,7 +40,7 @@ pub const CACHE_LENGTH: usize = 8;
 /// ZOPFLI_WINDOW_SIZE, while zlib uses 4096 even for best level), but makes it
 /// faster on some specific files.
 /// Good value: e.g. 8192.
-const MAX_CHAIN_HITS: usize = 8192;
+pub const MAX_CHAIN_HITS: usize = 8192;
 
 /// Gets the amount of extra bits for the given dist, cfr. the DEFLATE spec.
 fn get_dist_extra_bits(dist: i32) -> i32 {
@@ -60,7 +62,7 @@ fn get_dist_extra_bits_value(dist: i32) -> i32 {
 }
 
 /// Gets the symbol for the given dist, cfr. the DEFLATE spec.
-fn get_dist_symbol(dist: i32) -> i32 {
+pub fn get_dist_symbol(dist: i32) -> i32 {
     if dist < 5 {
         dist - 1
     } else {
@@ -112,7 +114,7 @@ fn get_length_extra_bits_value(l: i32) -> i32 {
 
 /// Gets the symbol for the given length, cfr. the DEFLATE spec.
 /// Returns the symbol in the range [257-285] (inclusive)
-fn get_length_symbol(l: i32) -> i32 {
+pub fn get_length_symbol(l: i32) -> i32 {
     static TABLE: [i32; 259] = [
         0, 0, 0, 257, 258, 259, 260, 261, 262, 263, 264,
         265, 265, 266, 266, 267, 267, 268, 268,

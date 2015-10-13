@@ -6,18 +6,18 @@ use libc::{c_void, size_t};
 
 use util::{MIN_MATCH, WINDOW_MASK};
 
-struct Hash {
+pub struct Hash {
     /// Hash value to index of its most recent occurrence.
-    head: *mut i32,
+    pub head: *mut i32,
     /// Index to index of prev. occurrence of same hash.
-    prev: *mut u16,
+    pub prev: *mut u16,
     /// Index to hash value at this index.
-    hashval: *mut i32,
+    pub hashval: *mut i32,
     /// Current hash value.
-    val: i32,
+    pub val: i32,
 
-    hash_same_hash: HashSameHash,
-    hash_same: HashSame,
+    pub hash_same_hash: HashSameHash,
+    pub hash_same: HashSame,
 }
 
 #[cfg(not(feature = "hash-same-hash"))]
@@ -26,15 +26,15 @@ struct HashSameHash;
 #[cfg(feature = "hash-same-hash")]
 /// Fields with similar purpose as the above hash, but for the second hash with
 /// a value that is calculated differently.
-struct HashSameHash {
+pub struct HashSameHash {
     /// Hash value to index of its most recent occurrence.
-    head2: *mut i32,
+    pub head2: *mut i32,
     /// Index to index of prev. occurrence of same hash.
-    prev2: *mut u16,
+    pub prev2: *mut u16,
     /// Index to hash value at this index.
-    hashval2: *mut i32,
+    pub hashval2: *mut i32,
     /// Current hash value.
-    val2: i32,
+    pub val2: i32,
 }
 
 impl HashSameHash {
@@ -82,9 +82,9 @@ impl HashSameHash {
 struct HashSame;
 
 #[cfg(feature = "hash-same")]
-struct HashSame {
+pub struct HashSame {
     /// Amount of repetitions of same byte after this.
-    same: *mut u16,
+    pub same: *mut u16,
 }
 
 impl HashSame {
@@ -118,7 +118,7 @@ const HASH_SHIFT: u32 = 5;
 const HASH_MASK: i32 = 32767;
 
 impl Hash {
-    unsafe fn new(window_size: usize) -> Hash {
+    pub unsafe fn new(window_size: usize) -> Hash {
         let mut head: *mut i32 = null_mut();
         head = transmute(malloc(size_of_val(&*head) as size_t * 65536));
         let mut prev: *mut u16 = null_mut();
@@ -146,7 +146,7 @@ impl Hash {
         }
     }
 
-    unsafe fn clean(h: *mut Hash) {
+    pub unsafe fn clean(h: *mut Hash) {
         free((*h).head as *mut c_void);
         free((*h).prev as *mut c_void);
         free((*h).hashval as *mut c_void);
@@ -193,7 +193,7 @@ unsafe fn update_hash_same_hash(array: *const u8, pos: usize, end: usize, hpos: 
     *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) = hpos as i32;
 }
 
-unsafe fn update_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash) {
+pub unsafe fn update_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash) {
     let hpos: u16 = pos as u16 & WINDOW_MASK as u16;
     update_hash_value(h, if pos + MIN_MATCH <= end { *array.offset(pos as isize + MIN_MATCH as isize - 1) } else { 0 });
     *(*h).hashval.offset(hpos as isize) = (*h).val;
@@ -208,7 +208,7 @@ unsafe fn update_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash) {
     update_hash_same_hash(array, pos, end, hpos, h);
 }
 
-unsafe fn warmup_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash) {
+pub unsafe fn warmup_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash) {
     update_hash_value(h, *array.offset(pos as isize + 0));
     update_hash_value(h, *array.offset(pos as isize + 1));
 }

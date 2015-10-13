@@ -14,13 +14,14 @@ use util::CACHE_LENGTH;
 /// This is needed because the squeeze runs will ask these values multiple times for the same position.
 /// Uses large amounts of memory, since it has to remember the distance belonging
 /// to every possible shorter-than-the-best length (the so called "sublen" array).
-struct LongestMatchCache {
-    length: *const u16,
-    dist: *const u16,
+pub struct LongestMatchCache {
+    pub length: *mut u16,
+    pub dist: *mut u16,
     sublen: *mut u8,
 }
 
 impl LongestMatchCache {
+    /// Initializes the ZopfliLongestMatchCache.
     unsafe fn new(blocksize: usize) -> LongestMatchCache {
         let length: *mut u16 = transmute(malloc((size_of::<u16>() * blocksize) as size_t));
         let dist: *mut u16 = transmute(malloc((size_of::<u16>() * blocksize) as size_t));
@@ -51,13 +52,15 @@ impl LongestMatchCache {
     }
 }
 
+/// Frees up the memory of the ZopfliLongestMatchCache.
 unsafe fn clean_cache(lmc: *mut LongestMatchCache) {
     free((*lmc).length as *mut c_void);
     free((*lmc).dist as *mut c_void);
     free((*lmc).sublen as *mut c_void);
 }
 
-unsafe fn sublen_to_cache(sublen: *const u16, pos: usize, length: usize, lmc: *mut LongestMatchCache) {
+/// Stores sublen array in the cache.
+pub unsafe fn sublen_to_cache(sublen: *const u16, pos: usize, length: usize, lmc: *mut LongestMatchCache) {
     if CACHE_LENGTH == 0 {
         return;
     }
@@ -91,7 +94,8 @@ unsafe fn sublen_to_cache(sublen: *const u16, pos: usize, length: usize, lmc: *m
     assert_eq!(bestlength, max_cached_sublen(lmc, pos, length));
 }
 
-unsafe fn cache_to_sublen(lmc: *const LongestMatchCache, pos: usize, length: usize, sublen: *mut u16) {
+/// Extracts sublen array from the cache.
+pub unsafe fn cache_to_sublen(lmc: *const LongestMatchCache, pos: usize, length: usize, sublen: *mut u16) {
     if CACHE_LENGTH == 0 {
         return;
     }
@@ -116,7 +120,7 @@ unsafe fn cache_to_sublen(lmc: *const LongestMatchCache, pos: usize, length: usi
 }
 
 /// Returns the length up to which could be stored in the cache.
-unsafe fn max_cached_sublen(lmc: *const LongestMatchCache, pos: usize, _length: usize) -> u32 {
+pub unsafe fn max_cached_sublen(lmc: *const LongestMatchCache, pos: usize, _length: usize) -> u32 {
     if CACHE_LENGTH == 0 {
         return 0;
     }

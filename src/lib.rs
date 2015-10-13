@@ -2,14 +2,16 @@
 extern crate log;
 extern crate libc;
 
+mod util;
+
 #[cfg(feature = "longest-match-cache")]
 mod cache;
 mod deflate;
 mod gzip_container;
 mod hash;
 mod katajainen;
+mod lz77;
 mod tree;
-mod util;
 mod zlib_container;
 
 /// Options used throughout the program.
