@@ -2,7 +2,7 @@
 //! compression.
 
 use std;
-use std::mem::{size_of, size_of_val, transmute};
+use std::mem::{size_of, size_of_val, transmute, uninitialized};
 use std::ptr::{null, null_mut};
 
 use libc::funcs::c95::stdlib::{free, malloc};
@@ -420,7 +420,8 @@ unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *const
 unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, inend: usize, store: *mut LZ77Store) {
     let i: usize = 0;
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
-    let dummysublen = [0u16; 259].as_mut_ptr();
+    let mut dummysublen_array: [u16; 259] = uninitialized();
+    let dummysublen = dummysublen_array.as_mut_ptr();
 
     if instart == inend {
         return;
