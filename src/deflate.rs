@@ -219,5 +219,4 @@ pub unsafe fn deflate(options: *const Options, btype: i32, is_final: bool, input
     *out = malloc(insize as u64) as *mut u8;
     ptr::copy_nonoverlapping(input, *out, insize);
     *outsize = insize;
-    unimplemented!();
 }
