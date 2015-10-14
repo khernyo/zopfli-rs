@@ -151,8 +151,8 @@ unsafe fn extract_bit_lengths(chain: *const Node, leaves: *const Node, bitlength
 
 /// Comparator for sorting the leaves. Has the function signature for qsort.
 unsafe fn leaf_comparator(a: *const c_void, b: *const c_void) -> i32 {
-    let node_a: *const Node = mem::transmute(a);
-    let node_b: *const Node = mem::transmute(b);
+    let node_a: *const Node = a as *const Node;
+    let node_b: *const Node = b as *const Node;
     (*node_a).weight as i32 - (*node_b).weight as i32
 }
 
@@ -166,7 +166,7 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, max
     let mut numsymbols = 0;
 
     // One leaf per symbol. Only numsymbols leaves will be used.
-    let leaves: *mut Node = mem::transmute(malloc((n as usize * mem::size_of::<Node>()) as size_t));
+    let leaves: *mut Node = malloc((n as usize * mem::size_of::<Node>()) as size_t) as *mut Node;
 
     // Initialize all bitlengths at 0.
     for i in 0..n {
@@ -184,25 +184,25 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, max
 
     // Check special cases and error conditions.
     if (1 << maxbits) < numsymbols {
-        free(mem::transmute(leaves));
+        free(leaves as *mut c_void);
         return true; // Error, too few maxbits to represent symbols.
     }
     if numsymbols == 0 {
-        free(mem::transmute(leaves));
+        free(leaves as *mut c_void);
         return false; // No symbols at all. OK.
     }
     if numsymbols == 1 {
         *bitlengths.offset((*leaves.offset(0)).count as isize) = 1;
-        free(mem::transmute(leaves));
+        free(leaves as *mut c_void);
         return false; // Only one symbol, give it bitlength 1, not 0. OK.
     }
 
     // Sort the leaves from lightest to heaviest.
-    qsort(mem::transmute(leaves), numsymbols as size_t, mem::size_of::<Node>() as size_t, mem::transmute(&leaf_comparator));
+    qsort(leaves as *mut c_void, numsymbols as size_t, mem::size_of::<Node>() as size_t, mem::transmute(&leaf_comparator));
 
     // Initialize node memory pool.
     let pool_size = 2 * maxbits * (maxbits + 1);
-    let pool_nodes = mem::transmute(malloc((pool_size as usize * mem::size_of::<Node>()) as size_t));
+    let pool_nodes = malloc((pool_size as usize * mem::size_of::<Node>()) as size_t) as *mut Node;
     let mut pool = NodePool { size: pool_size as u32, nodes: pool_nodes, next: pool_nodes };
     for i in 0..pool.size {
         (*pool.nodes.offset(i as isize)).in_use = false;
@@ -210,7 +210,7 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, max
 
     // Array of lists of chains. Each list requires only two lookahead chains at
     // a time, so each list is a array of two Node*'s.
-    let lists: *const *mut *mut Node = mem::transmute(malloc((maxbits as usize * mem::size_of::<*const *const Node>()) as size_t));
+    let lists: *const *mut *mut Node = malloc((maxbits as usize * mem::size_of::<*const *const Node>()) as size_t) as *const *mut *mut Node;
     init_lists(&mut pool, leaves, maxbits, lists);
 
     // In the last list, 2 * numsymbols - 2 active chains need to be created. Two
@@ -223,8 +223,8 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, max
 
     extract_bit_lengths(*(*lists.offset(maxbits as isize - 1)).offset(1), leaves, bitlengths);
 
-    free(mem::transmute(lists));
-    free(mem::transmute(leaves));
-    free(mem::transmute(pool.nodes));
+    free(lists as *mut c_void);
+    free(leaves as *mut c_void);
+    free(pool.nodes as *mut c_void);
     false
 }

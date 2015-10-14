@@ -5,7 +5,6 @@ extern crate libc;
 use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::mem;
 use std::ptr;
 use std::ptr::null_mut;
 use std::slice;
@@ -114,7 +113,7 @@ unsafe fn load_file(filename: &str, buf: *mut *mut u8, size: *mut usize) {
     }
     let mut b = Vec::new();
     assert_eq!(f.read_to_end(&mut b).unwrap(), *size);
-    *buf = mem::transmute(malloc(*size as size_t));
+    *buf = malloc(*size as size_t) as *mut u8;
     ptr::copy_nonoverlapping(b.as_ptr(), *buf, *size);
 }
 

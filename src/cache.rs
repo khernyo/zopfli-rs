@@ -2,7 +2,7 @@
 
 //! The cache that speeds up ZopfliFindLongestMatch of lz77.c.
 
-use std::mem::{size_of, transmute};
+use std::mem::size_of;
 use std::ptr::null_mut;
 
 use libc::funcs::c95::stdlib::{free, malloc};
@@ -23,12 +23,12 @@ pub struct LongestMatchCache {
 impl LongestMatchCache {
     /// Initializes the ZopfliLongestMatchCache.
     unsafe fn new(blocksize: usize) -> LongestMatchCache {
-        let length: *mut u16 = transmute(malloc((size_of::<u16>() * blocksize) as size_t));
-        let dist: *mut u16 = transmute(malloc((size_of::<u16>() * blocksize) as size_t));
+        let length: *mut u16 = malloc((size_of::<u16>() * blocksize) as size_t) as *mut u16;
+        let dist: *mut u16 = malloc((size_of::<u16>() * blocksize) as size_t) as *mut u16;
 
         // Rather large amount of memory.
         let sublen_size = (CACHE_LENGTH * 3 * blocksize) as size_t;
-        let sublen: *mut u8 = transmute(malloc(sublen_size));
+        let sublen: *mut u8 = malloc(sublen_size) as *mut u8;
         if sublen == null_mut() {
             panic!("Error: Out of memory. Tried allocating {} bytes of memory.", sublen_size);
         }

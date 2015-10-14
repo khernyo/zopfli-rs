@@ -2,7 +2,7 @@
 //! compression.
 
 use std;
-use std::mem::{size_of, size_of_val, transmute, uninitialized};
+use std::mem::{size_of, size_of_val, uninitialized};
 use std::ptr::{null, null_mut};
 
 use libc::funcs::c95::stdlib::{free, malloc};
@@ -67,8 +67,8 @@ unsafe fn clean_lz77_store(store: *mut LZ77Store) {
 
 unsafe fn copy_lz77_store(source: *const LZ77Store, dest: *mut LZ77Store) {
     clean_lz77_store(dest);
-    (*dest).litlens = transmute(malloc((size_of_val(&*(*dest).litlens) * (*source).size) as size_t));
-    (*dest).dists = transmute(malloc((size_of_val(&*(*dest).dists) * (*source).size) as size_t));
+    (*dest).litlens = malloc((size_of_val(&*(*dest).litlens) * (*source).size) as size_t) as *mut u16;
+    (*dest).dists = malloc((size_of_val(&*(*dest).dists) * (*source).size) as size_t) as *mut u16;
 
     if (*dest).litlens == null_mut() || (*dest).dists == null_mut() {
         // Allocation failed.

@@ -1,4 +1,4 @@
-use std::mem::{size_of_val, transmute};
+use std::mem::size_of_val;
 use std::ptr::null_mut;
 
 use libc::funcs::c95::stdlib::{free, malloc};
@@ -46,11 +46,11 @@ impl HashSameHash {
     #[cfg(feature = "hash-same-hash")]
     unsafe fn new(window_size: usize) -> HashSameHash {
         let mut head2: *mut i32 = null_mut();
-        head2 = transmute(malloc(size_of_val(&*head2) as size_t * 65536));
+        head2 = malloc(size_of_val(&*head2) as size_t * 65536) as *mut i32;
         let mut prev2: *mut u16 = null_mut();
-        prev2 = transmute(malloc((size_of_val(&*prev2) * window_size) as size_t));
+        prev2 = malloc((size_of_val(&*prev2) * window_size) as size_t) as *mut u16;
         let mut hashval2: *mut i32 = null_mut();
-        hashval2 = transmute(malloc((size_of_val(&*hashval2) * window_size) as size_t));
+        hashval2 = malloc((size_of_val(&*hashval2) * window_size) as size_t) as *mut i32;
         for i in 0..65536 {
             *head2.offset(i) = -1;
         }
@@ -96,7 +96,7 @@ impl HashSame {
     #[cfg(feature = "hash-same")]
     unsafe fn new(window_size: usize) -> HashSame {
         let mut same: *mut u16 = null_mut();
-        same = transmute(malloc((size_of_val(&*same) * window_size) as size_t));
+        same = malloc((size_of_val(&*same) * window_size) as size_t) as *mut u16;
         for i in 0..window_size {
             *same.offset(i as isize) = 0;
         }
@@ -120,11 +120,11 @@ const HASH_MASK: i32 = 32767;
 impl Hash {
     pub unsafe fn new(window_size: usize) -> Hash {
         let mut head: *mut i32 = null_mut();
-        head = transmute(malloc(size_of_val(&*head) as size_t * 65536));
+        head = malloc(size_of_val(&*head) as size_t * 65536) as *mut i32;
         let mut prev: *mut u16 = null_mut();
-        prev = transmute(malloc((size_of_val(&*prev) * window_size) as size_t));
+        prev = malloc((size_of_val(&*prev) * window_size) as size_t) as *mut u16;
         let mut hashval: *mut i32 = null_mut();
-        hashval = transmute(malloc((size_of_val(&*hashval) * window_size) as size_t));
+        hashval = malloc((size_of_val(&*hashval) * window_size) as size_t) as *mut i32;
 
         for i in 0..65536 {
             // -1 indicates no head so far.
