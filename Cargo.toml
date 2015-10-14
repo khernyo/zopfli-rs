@@ -2,6 +2,10 @@
 name = "zopfli"
 version = "0.0.1"
 authors = ["Szabolcs Berecz <szabolcs.berecz@gmail.com>"]
+repository = "https://github.com/khernyo/zopfli-rs.git"
+homepage = "https://github.com/khernyo/zopfli-rs"
+license = "Apache-2.0"
+readme = "README.md"
 
 [dependencies]
 log = "*"
