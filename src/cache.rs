@@ -125,7 +125,7 @@ pub unsafe fn max_cached_sublen(lmc: *const LongestMatchCache, pos: usize, _leng
         return 0;
     }
     let cache: *const u8 = (*lmc).sublen.offset((CACHE_LENGTH * pos * 3) as isize);
-    if (*cache.offset(1) == 0 && *cache.offset(2) == 0) {
+    if *cache.offset(1) == 0 && *cache.offset(2) == 0 {
         // No sublen cached.
         return 0;
     }
