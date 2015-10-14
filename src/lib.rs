@@ -6,6 +6,7 @@ extern crate libc;
 
 mod util;
 
+mod blocksplitter;
 #[cfg(feature = "longest-match-cache")]
 mod cache;
 mod deflate;
@@ -77,7 +78,7 @@ pub unsafe fn compress(options: *const Options, output_type: Format, input: *con
         Format::ZLIB    => zlib_container::compress(options, input, insize, out, outsize),
         Format::DEFLATE => {
             let mut bp: u8 = 0;
-            deflate::compress(options, 2 /* Dynamic block */, true, input, insize, &mut bp, out, outsize)
+            deflate::deflate(options, 2 /* Dynamic block */, true, input, insize, &mut bp, out, outsize)
         },
     }
 }

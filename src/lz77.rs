@@ -15,6 +15,7 @@ use cache::LongestMatchCache;
 
 use super::hash;
 use super::util;
+use super::Options;
 
 use hash::Hash;
 use util::{MIN_MATCH, MAX_MATCH, MAX_CHAIN_HITS, WINDOW_MASK, WINDOW_SIZE};
@@ -26,17 +27,17 @@ use util::{MIN_MATCH, MAX_MATCH, MAX_CHAIN_HITS, WINDOW_MASK, WINDOW_SIZE};
 /// Parameter size: The size of both the litlens and dists arrays.
 /// The memory can best be managed by using ZopfliInitLZ77Store to initialize it,
 /// ZopfliCleanLZ77Store to destroy it, and ZopfliStoreLitLenDist to append values.
-struct LZ77Store {
+pub struct LZ77Store {
     /// Lit or len.
-    litlens: *mut u16,
+    pub litlens: *mut u16,
     /// If 0: indicates literal in corresponding litlens,
     /// if > 0: length in corresponding litlens, this is the distance.
-    dists: *mut u16,
-    size: usize,
+    pub dists: *mut u16,
+    pub size: usize,
 }
 
 impl LZ77Store {
-    fn new() -> LZ77Store {
+    pub fn new() -> LZ77Store {
         LZ77Store {
             litlens: null_mut(),
             dists: null_mut(),
@@ -48,8 +49,8 @@ impl LZ77Store {
 /// Some state information for compressing a block.
 /// This is currently a bit under-used (with mainly only the longest match cache),
 /// but is kept for easy future expansion.
-struct BlockState {
-    options: *const super::Options,
+pub struct BlockState {
+    options: *const Options,
 
     /// Cache for length/distance pairs found so far.
     #[cfg(feature = "longest-match-cache")]
@@ -60,7 +61,28 @@ struct BlockState {
     blockend: usize,
 }
 
-unsafe fn clean_lz77_store(store: *mut LZ77Store) {
+impl BlockState {
+    #[cfg(feature = "longest-match-cache")]
+    pub fn new(options: *const Options, blockstart: usize, blockend: usize) -> BlockState {
+        BlockState {
+            options: options,
+            blockstart: blockstart,
+            blockend: blockend,
+            lmc: null_mut(),
+        }
+    }
+
+    #[cfg(not(feature = "longest-match-cache"))]
+    pub fn new(options: *const Options, blockstart: usize, blockend: usize) -> BlockState {
+        BlockState {
+            options: options,
+            blockstart: blockstart,
+            blockend: blockend,
+        }
+    }
+}
+
+pub unsafe fn clean_lz77_store(store: *mut LZ77Store) {
     free((*store).litlens as *mut c_void);
     free((*store).dists as *mut c_void);
 }
@@ -417,7 +439,7 @@ unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *const
 /// The result is placed in the ZopfliLZ77Store.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, inend: usize, store: *mut LZ77Store) {
+pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, inend: usize, store: *mut LZ77Store) {
     let i: usize = 0;
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
     let mut dummysublen_array: [u16; 259] = uninitialized();

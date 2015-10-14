@@ -25,7 +25,7 @@ pub const WINDOW_MASK: usize = WINDOW_SIZE - 1;
 const MASTER_BLOCK_SIZE: usize = 20000000;
 
 /// Used to initialize costs for example
-const LARGE_FLOAT: f64 = 1e30;
+pub const LARGE_FLOAT: f64 = 1e30;
 
 /// For longest match cache. max 256. Uses huge amounts of memory but makes it
 /// faster. Uses this many times three bytes per single byte of the input data.
