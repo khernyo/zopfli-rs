@@ -2,30 +2,52 @@
 //! "squeeze" LZ77 compression backend.
 
 use std::mem::uninitialized;
-use std::ptr;
+use std::ptr::{copy_nonoverlapping, null_mut};
 
 use libc::{c_void, size_t};
 use libc::funcs::c95::stdlib::{free, malloc};
 
 use super::Options;
 
+use tree::{calculate_bit_lengths, lengths_to_symbols};
+
 /// bp = bitpointer, always in range [0, 7].
 /// The outsize is number of necessary bytes to encode the bits.
 /// Given the value of bp and the amount of bytes, the amount of bits represented
 /// is not simply bytesize * 8 + bp because even representing one bit requires a
 /// whole byte. It is: (bp == 0) ? (bytesize * 8) : ((bytesize - 1) * 8 + bp)
-fn add_bit(bit: i32, bp: *const u8, out: *const *const u8, outsize: *const usize) {
-    unimplemented!();
+unsafe fn add_bit(bit: i32, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    if *bp == 0 {
+        append_data!(0, *out, *outsize);
+    }
+    *(*out).offset(*outsize as isize - 1) |= (bit << *bp) as u8;
+    *bp = (*bp + 1) & 7;
 }
 
-fn add_bits(symbol: u32, length: u32, bp: *const u8, out: *const *const u8, outsize: *const usize) {
-    unimplemented!();
+unsafe fn add_bits(symbol: u32, length: u32, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    // TODO(lode): make more efficient (add more bits at once).
+    for i in 0..length {
+        let bit: u32 = (symbol >> i) & 1;
+        if *bp == 0 {
+            append_data!(0, *out, *outsize);
+        }
+        *(*out).offset(*outsize as isize - 1) |= (bit << *bp) as u8;
+        *bp = (*bp + 1) & 7;
+    }
 }
 
 /// Adds bits, like AddBits, but the order is inverted. The deflate specification
 /// uses both orders in one standard.
-fn add_huffman_bits(symbol: u32, length: u32, bp: *const u8, out: *const *const u8, outsize: *const usize) {
-    unimplemented!();
+unsafe fn add_huffman_bits(symbol: u32, length: u32, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    // TODO(lode): make more efficient (add more bits at once).
+    for i in 0..length {
+        let bit: u32 = (symbol >> (length - i - 1)) & 1;
+        if *bp == 0 {
+            append_data!(0, *out, *outsize);
+        }
+        *(*out).offset(*outsize as isize - 1) |= (bit << *bp) as u8;
+        *bp = (*bp + 1) & 7;
+    }
 }
 
 /**
@@ -40,14 +62,179 @@ fn add_huffman_bits(symbol: u32, length: u32, bp: *const u8, out: *const *const 
  *
  * d_lengths: the 32 lengths of the distance codes.
  */
-fn patch_distance_codes_for_buggy_decoders(d_lengths: *const u32) {
-    unimplemented!();
+unsafe fn patch_distance_codes_for_buggy_decoders(d_lengths: *mut u32) {
+    // Amount of non-zero distance codes
+    let mut num_dist_codes: i32 = 0;
+
+    for i in 0..30 /* Ignore the two unused codes from the spec */ {
+        if *d_lengths.offset(i) != 0 {
+            num_dist_codes += 1;
+        }
+        if num_dist_codes >= 2 {
+            // Two or more codes is fine.
+            return;
+        }
+    }
+
+    if num_dist_codes == 2 {
+        *d_lengths.offset(0) = 1;
+        *d_lengths.offset(1) = 1;
+    } else if num_dist_codes == 1 {
+        *d_lengths.offset(if *d_lengths.offset(0) != 0 { 1 } else { 0 }) = 1;
+    }
 }
 
 /// Encodes the Huffman tree and returns how many bits its encoding takes. If out
 /// is a null pointer, only returns the size and runs faster.
-fn encode_tree(ll_lengths: *const u32, d_lengths: *const u32, use_16: i32, use_17: i32, use_18: i32, bp: *const u8, out: *const *const u8, outsize: *const usize) -> usize {
-    unimplemented!();
+unsafe fn encode_tree(ll_lengths: *const u32, d_lengths: *const u32, use_16: bool, use_17: bool, use_18: bool, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) -> usize {
+    let mut rle: *mut u32 = null_mut(); // Runlength encoded version of lengths of litlen and dist trees.
+    let mut rle_bits: *mut u32 = null_mut(); // Extra bits for rle values 16, 17 and 18.
+    let mut rle_size: usize = 0; // Size of rle array.
+    let mut rle_bits_size: usize = 0; // Should have same value as rle_size.
+    let mut hlit: u32 = 29; // 286 - 257
+    let mut hdist: u32 = 29; // 32 - 1, but gzip does not like hdist > 29.
+    let mut hclen: u32;
+    let mut clcounts: [usize; 19] = [0; 19];
+    let mut clcl: [u32; 19] = uninitialized(); // Code length code lengths.
+    let mut clsymbols: [u32; 19] = uninitialized();
+
+    /// The order in which code length code lengths are encoded as per deflate.
+    const ORDER: [u32; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+
+    let size_only = out.is_null();
+    let mut result_size: usize = 0;
+
+    // Trim zeros.
+    while hlit > 0 && *ll_lengths.offset(257 + hlit as isize - 1) == 0 {
+        hlit -= 1;
+    }
+    while hdist > 0 && *d_lengths.offset(1 + hdist as isize - 1) == 0 {
+        hdist -= 1;
+    }
+    let hlit2: u32 = hlit + 257;
+
+    let lld_total: u32 = hlit2 + hdist + 1; // Total amount of literal, length, distance codes.
+
+    let mut i: usize = 0;
+    while i < lld_total as usize {
+        // This is an encoding of a huffman tree, so now the length is a symbol
+        let symbol: u8 = if i < hlit2 as usize { *ll_lengths.offset(i as isize) as u8 } else { *d_lengths.offset((i - hlit2 as usize) as isize) as u8 };
+        let mut count: u32 = 1;
+        if use_16 || (symbol == 0 && (use_17 || use_18)) {
+            let mut j: usize = i as usize + 1;
+            while j < lld_total as usize && symbol == (if j < hlit2 as usize { *ll_lengths.offset(j as isize) as u8 } else { *d_lengths.offset((j - hlit2 as usize) as isize) as u8 }) {
+                count += 1;
+                j += 1;
+            }
+        }
+        i += count as usize - 1;
+
+        // Repetitions of zeroes
+        if symbol == 0 && count >= 3 {
+            if use_18 {
+                while count >= 11 {
+                    let count2: u32 = if count > 138 { 138 } else { count };
+                    if !size_only {
+                        append_data!(18, rle, rle_size);
+                        append_data!(count2 - 11, rle_bits, rle_bits_size);
+                    }
+                    clcounts[18] += 1;
+                    count -= count2;
+                }
+            }
+            if use_17 {
+                while count >= 3 {
+                    let count2: u32 = if count > 10 { 10 } else { count };
+                    if !size_only {
+                        append_data!(17, rle, rle_size);
+                        append_data!(count2 - 3, rle_bits, rle_bits_size);
+                    }
+                    clcounts[17] += 1;
+                    count -= count2;
+                }
+            }
+        }
+
+        // Repetitions of any symbol
+        if use_16 && count >= 4 {
+            count -= 1; // Since the first one is hardcoded.
+            clcounts[symbol as usize] += 1;
+            if !size_only {
+                append_data!(symbol as u32, rle, rle_size);
+                append_data!(0, rle_bits, rle_bits_size);
+            }
+            while count >= 3 {
+                let count2: u32 = if count > 6 { 6 } else { count };
+                if !size_only {
+                    append_data!(16, rle, rle_size);
+                    append_data!(count2 - 3, rle_bits, rle_bits_size);
+                }
+                clcounts[16] += 1;
+                count -= count2;
+            }
+        }
+
+        // No or insufficient repetition
+        clcounts[symbol as usize] += count as usize;
+        while count > 0 {
+            if !size_only {
+                append_data!(symbol as u32, rle, rle_size);
+                append_data!(0, rle_bits, rle_bits_size);
+            }
+            count -= 1;
+        }
+        i += 1;
+    }
+
+    calculate_bit_lengths(clcounts.as_ptr(), 19, 7, clcl.as_mut_ptr());
+    if !size_only {
+        lengths_to_symbols(clcl.as_ptr(), 19, 7, clsymbols.as_mut_ptr());
+    }
+
+    hclen = 15;
+    // Trim zeros.
+    while hclen > 0 && clcounts[ORDER[hclen as usize + 4 - 1] as usize] == 0 {
+        hclen -= 1;
+    }
+
+    if !size_only {
+        add_bits(hlit, 5, bp, out, outsize);
+        add_bits(hdist, 5, bp, out, outsize);
+        add_bits(hclen, 4, bp, out, outsize);
+
+        for i in 0..hclen+4 {
+            add_bits(clcl[ORDER[i as usize] as usize], 3, bp, out, outsize);
+        }
+
+        for i in 0..rle_size {
+            let symbol: u32 = clsymbols[*rle.offset(i as isize) as usize];
+            add_huffman_bits(symbol, clcl[*rle.offset(i as isize) as usize], bp, out, outsize);
+            // Extra bits.
+            if *rle.offset(i as isize) == 16 {
+                add_bits(*rle_bits.offset(i as isize), 2, bp, out, outsize);
+            } else if *rle.offset(i as isize) == 17 {
+                add_bits(*rle_bits.offset(i as isize), 3, bp, out, outsize);
+            } else if *rle.offset(i as isize) == 18 {
+                add_bits(*rle_bits.offset(i as isize), 7, bp, out, outsize);
+            }
+        }
+    }
+
+    result_size += 14; // hlit, hdist, hclen bits
+    result_size += (hclen as usize + 4) * 3; // clcl bits
+    for i in 0..19 {
+        result_size += clcl[i] as usize * clcounts[i];
+    }
+    // Extra bits.
+    result_size += clcounts[16] * 2;
+    result_size += clcounts[17] * 3;
+    result_size += clcounts[18] * 7;
+
+    // Note: in case of "size_only" these are null pointers so no effect.
+    free(rle as *mut c_void);
+    free(rle_bits as *mut c_void);
+
+    result_size
 }
 
 fn add_dynamic_tree(ll_lengths: *const u32, d_lengths: *const u32, bp: *const u8, out: *const *const u8, outsize: *const usize) {
@@ -217,6 +404,6 @@ fn deflate_part(options: *const Options, btype: i32, is_final: bool, input: *con
  */
 pub unsafe fn deflate(options: *const Options, btype: i32, is_final: bool, input: *const u8, insize: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
     *out = malloc(insize as u64) as *mut u8;
-    ptr::copy_nonoverlapping(input, *out, insize);
+    copy_nonoverlapping(input, *out, insize);
     *outsize = insize;
 }
