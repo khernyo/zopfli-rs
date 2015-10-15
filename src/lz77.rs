@@ -536,7 +536,7 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
  *     standard)
  * d_count: count of each dist symbol, must have size 32 (see deflate standard)
  */
-unsafe fn lz77_counts(litlens: *const u16, dists: *const u16, start: usize, end: usize, ll_count: *mut usize, d_count: *mut usize) {
+pub unsafe fn lz77_counts(litlens: *const u16, dists: *const u16, start: usize, end: usize, ll_count: *mut usize, d_count: *mut usize) {
     for i in 0..288 {
         *ll_count.offset(i) = 0;
     }

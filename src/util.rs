@@ -43,7 +43,7 @@ pub const CACHE_LENGTH: usize = 8;
 pub const MAX_CHAIN_HITS: usize = 8192;
 
 /// Gets the amount of extra bits for the given dist, cfr. the DEFLATE spec.
-fn get_dist_extra_bits(dist: i32) -> i32 {
+pub fn get_dist_extra_bits(dist: i32) -> i32 {
     if dist < 5 {
         0
     } else {
@@ -52,7 +52,7 @@ fn get_dist_extra_bits(dist: i32) -> i32 {
 }
 
 /// Gets value of the extra bits for the given dist, cfr. the DEFLATE spec.
-fn get_dist_extra_bits_value(dist: i32) -> i32 {
+pub fn get_dist_extra_bits_value(dist: i32) -> i32 {
     if dist < 5 {
         0
     } else {
@@ -73,7 +73,7 @@ pub fn get_dist_symbol(dist: i32) -> i32 {
 }
 
 /// Gets the amount of extra bits for the given length, cfr. the DEFLATE spec.
-fn get_length_extra_bits(l: i32) -> i32 {
+pub fn get_length_extra_bits(l: i32) -> i32 {
     const TABLE: [i32; 259] = [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
         2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
@@ -95,7 +95,7 @@ fn get_length_extra_bits(l: i32) -> i32 {
 }
 
 /// Gets value of the extra bits for the given length, cfr. the DEFLATE spec.
-fn get_length_extra_bits_value(l: i32) -> i32 {
+pub fn get_length_extra_bits_value(l: i32) -> i32 {
     const TABLE: [i32; 259] = [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 2, 3, 0,
         1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5,

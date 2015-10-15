@@ -1,7 +1,7 @@
 //! Functions to compress according to the DEFLATE specification, using the
 //! "squeeze" LZ77 compression backend.
 
-use std::mem::uninitialized;
+use std::mem::{size_of, uninitialized};
 use std::ptr::{copy_nonoverlapping, null_mut};
 
 use libc::{c_void, size_t};
@@ -9,7 +9,9 @@ use libc::funcs::c95::stdlib::{free, malloc};
 
 use super::Options;
 
+use lz77::lz77_counts;
 use tree::{calculate_bit_lengths, lengths_to_symbols};
+use util::{get_length_symbol, get_dist_symbol, get_length_extra_bits_value, get_length_extra_bits, get_dist_extra_bits_value, get_dist_extra_bits};
 
 /// bp = bitpointer, always in range [0, 7].
 /// The outsize is number of necessary bytes to encode the bits.
@@ -237,50 +239,212 @@ unsafe fn encode_tree(ll_lengths: *const u32, d_lengths: *const u32, use_16: boo
     result_size
 }
 
-fn add_dynamic_tree(ll_lengths: *const u32, d_lengths: *const u32, bp: *const u8, out: *const *const u8, outsize: *const usize) {
-    unimplemented!();
+unsafe fn add_dynamic_tree(ll_lengths: *const u32, d_lengths: *const u32, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    let mut best: i32 = 0;
+    let mut bestsize: usize = 0;
+
+    for i in 0..8 {
+        let size: usize = encode_tree(ll_lengths, d_lengths, i & 1 != 0, i & 2 != 0, i & 4 != 0, null_mut(), null_mut(), null_mut());
+        if bestsize == 0 || size < bestsize {
+            bestsize = size;
+            best = i;
+        }
+    }
+
+    encode_tree(ll_lengths, d_lengths, best & 1 != 0, best & 2 != 0, best & 4 != 0, bp, out, outsize);
 }
 
 /// Gives the exact size of the tree, in bits, as it will be encoded in DEFLATE.
-fn calculate_tree_size(ll_lengths: *const u32, d_lengths: *const u32) -> usize {
-    unimplemented!();
+unsafe fn calculate_tree_size(ll_lengths: *const u32, d_lengths: *const u32) -> usize {
+    let mut result: usize = 0;
+
+    for i in 0..8 {
+        let size: usize = encode_tree(ll_lengths, d_lengths, i & 1 != 0, i & 2 != 0, i & 4 != 0, null_mut(), null_mut(), null_mut());
+        if result == 0 || size < result {
+            result = size;
+        }
+    }
+
+    result
 }
 
 /// Adds all lit/len and dist codes from the lists as huffman symbols. Does not add
 /// end code 256. expected_data_size is the uncompressed block size, used for
 /// assert, but you can set it to 0 to not do the assertion.
-fn add_lz77_data(litlens: *const u16, dists: *const u16, lstart: usize, lend: usize, expected_data_size: usize,
+unsafe fn add_lz77_data(litlens: *const u16, dists: *const u16, lstart: usize, lend: usize, expected_data_size: usize,
                  ll_symbols: *const u32, ll_lengths: *const u32, d_symbols: *const u32, d_lengths: *const u32,
-                 bp: *const u8, out: *const *const u8, outsize: *const usize) {
-    unimplemented!();
+                 bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    let mut testlength: usize = 0;
+    for i in lstart..lend {
+        let dist: u32 = *dists.offset(i as isize) as u32;
+        let litlen: u32 = *litlens.offset(i as isize) as u32;
+        if dist == 0 {
+            assert!(litlen < 256);
+            assert!(*ll_lengths.offset(litlen as isize) > 0);
+            add_huffman_bits(*ll_symbols.offset(litlen as isize), *ll_lengths.offset(litlen as isize), bp, out, outsize);
+            testlength += 1;
+        } else {
+            let lls: u32 = get_length_symbol(litlen as i32) as u32;
+            let ds: u32 = get_dist_symbol(dist as i32) as u32;
+            assert!(litlen >= 3 && litlen <= 288);
+            assert!(*ll_lengths.offset(lls as isize) > 0);
+            assert!(*d_lengths.offset(ds as isize) > 0);
+            add_huffman_bits(*ll_symbols.offset(lls as isize), *ll_lengths.offset(lls as isize), bp, out, outsize);
+            add_bits(get_length_extra_bits_value(litlen as i32) as u32, get_length_extra_bits(litlen as i32) as u32, bp, out, outsize);
+            add_huffman_bits(*d_symbols.offset(ds as isize), *d_lengths.offset(ds as isize), bp, out, outsize);
+            add_bits(get_dist_extra_bits_value(dist as i32) as u32, get_dist_extra_bits(dist as i32) as u32, bp, out, outsize);
+            testlength += litlen as usize;
+        }
+    }
+    assert!(expected_data_size == 0 || testlength == expected_data_size);
 }
 
-fn get_fixed_tree(ll_lengths: *const u32, d_lengths: *const u32) {
-    unimplemented!();
+unsafe fn get_fixed_tree(ll_lengths: *mut u32, d_lengths: *mut u32) {
+    for i in 0..144 {
+        *ll_lengths.offset(i) = 8;
+    }
+    for i in 144..256 {
+        *ll_lengths.offset(i) = 9;
+    }
+    for i in 256..280 {
+        *ll_lengths.offset(i) = 7;
+    }
+    for i in 280..288 {
+        *ll_lengths.offset(i) = 8;
+    }
+    for i in 0..32 {
+        *d_lengths.offset(i) = 5;
+    }
 }
 
 /// Calculates size of the part after the header and tree of an LZ77 block, in bits.
-fn calculate_block_symbol_size(ll_lengths: *const u32, d_lengths: *const u32, litlens: *const u16, dists: *const u16, lstart: usize, lend: usize) -> usize {
-    unimplemented!();
+unsafe fn calculate_block_symbol_size(ll_lengths: *const u32, d_lengths: *const u32, litlens: *const u16, dists: *const u16, lstart: usize, lend: usize) -> usize {
+    let mut result: usize = 0;
+    for i in lstart..lend {
+        if *dists.offset(i as isize) ==0 {
+            result += *ll_lengths.offset(*litlens.offset(i as isize) as isize) as usize;
+        } else {
+            result += *ll_lengths.offset(get_length_symbol(*litlens.offset(i as isize) as i32) as isize) as usize;
+            result += *d_lengths.offset(get_dist_symbol(*dists.offset(i as isize) as i32) as isize) as usize;
+            result += get_length_extra_bits(*litlens.offset(i as isize) as i32) as usize;
+            result += get_dist_extra_bits(*dists.offset(i as isize) as i32) as usize;
+        }
+    }
+    result += *ll_lengths.offset(256) as usize; // end symbol
+    result
 }
 
 fn abs_diff(x: usize, y: usize) -> usize {
-    unimplemented!();
+    if x > y {
+        x - y
+    } else {
+        y - x
+    }
 }
 
 /// Change the population counts in a way that the consequent Hufmann tree
 /// compression, especially its rle-part will be more likely to compress this data
 /// more efficiently. length containts the size of the histogram.
-fn optimize_huffman_for_rle(length: i32, counts: *const usize) {
-    unimplemented!();
+unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
+    // 1) We don't want to touch the trailing zeros. We may break the
+    // rules of the format by adding more data in the distance codes.
+    while length >= 0 {
+        if length == 0 {
+            return;
+        }
+        if *counts.offset(length as isize - 1) != 0 {
+            // Now counts[0..length - 1] does not have trailing zeros.
+            break;
+        }
+        length -= 1;
+    }
+    // 2) Let's mark all population counts that already can be encoded
+    // with an rle code.
+    let good_for_rle: *mut bool = malloc((length as usize * size_of::<bool>()) as size_t) as *mut bool;
+    for i in 0..length {
+        *good_for_rle.offset(i as isize) = false;
+    }
+
+    // Let's not spoil any of the existing good rle codes.
+    // Mark any seq of 0's that is longer than 5 as a good_for_rle.
+    // Mark any seq of non-0's that is longer than 7 as a good_for_rle.
+    let mut symbol: usize = *counts.offset(0);
+    let mut stride: i32 = 0;
+    for i in 0..length+1 {
+        if i == length || *counts.offset(i as isize) != symbol {
+            if (symbol == 0 && stride >= 5) || (symbol != 0 && stride >= 7) {
+                for k in 0..stride {
+                    *good_for_rle.offset(i as isize - k as isize - 1) = true;
+                }
+            }
+            stride = 1;
+            if i != length {
+                symbol = *counts.offset(i as isize);
+            }
+        } else {
+            stride += 1;
+        }
+    }
+
+    // 3) Let's replace those population counts that lead to more rle codes.
+    let mut stride: i32 = 0;
+    let mut limit: usize = *counts.offset(0);
+    let mut sum: usize = 0;
+    for i in 0..length {
+        if i == length || *good_for_rle.offset(i as isize)
+            // Heuristic for selecting the stride ranges to collapse.
+            || abs_diff(*counts.offset(i as isize), limit) >= 4 {
+                if stride >= 4 || (stride >= 3 && sum == 0) {
+                    // The stride must end, collapse what we have, if we have enough (4).
+                    let mut count: i32 = ((sum + stride as usize / 2) / stride as usize) as i32;
+                    if count < 1 {
+                        count = 1;
+                    }
+                    if sum == 0 {
+                        // Don't make an all zeros stride to be upgraded to ones.
+                        count = 0;
+                    }
+                    for k in 0..stride {
+                        // We don't want to change value at counts[i],
+                        // that is already belonging to the next stride. Thus - 1.
+                        *counts.offset(i as isize - k as isize - 1) = count as usize;
+                    }
+                }
+                stride = 0;
+                sum = 0;
+                if i < length - 3 {
+                    // All interesting strides have a count of at least 4,
+                    // at least when non-zeros.
+                    limit = (*counts.offset(i as isize) + *counts.offset(i as isize + 1) + *counts.offset(i as isize + 2) + *counts.offset(i as isize + 3) + 2) / 4;
+                } else if i < length {
+                    limit = *counts.offset(i as isize);
+                } else {
+                    limit = 0;
+                }
+            }
+        stride += 1;
+        if i != length {
+            sum += *counts.offset(i as isize);
+        }
+    }
+
+    free(good_for_rle as *mut c_void);
 }
 
 /// Calculates the bit lengths for the symbols for dynamic blocks. Chooses bit
 /// lengths that give the smallest size of tree encoding + encoding of all the
 /// symbols to have smallest output size. This are not necessarily the ideal Huffman
 /// bit lengths.
-fn get_dynamic_lengths(litlens: *const u16, dists: *const u16, lstart: usize, lend: usize, ll_lengths: *const u32, d_lengths: *const u32) {
-    unimplemented!();
+unsafe fn get_dynamic_lengths(litlens: *const u16, dists: *const u16, lstart: usize, lend: usize, ll_lengths: *mut u32, d_lengths: *mut u32) {
+    let mut ll_counts: [usize; 288] = uninitialized();
+    let mut d_counts: [usize; 32] = uninitialized();
+
+    lz77_counts(litlens, dists, lstart, lend, ll_counts.as_mut_ptr(), d_counts.as_mut_ptr());
+    optimize_huffman_for_rle(288, ll_counts.as_mut_ptr());
+    optimize_huffman_for_rle(32, d_counts.as_mut_ptr());
+    calculate_bit_lengths(ll_counts.as_ptr(), 288, 15, ll_lengths);
+    calculate_bit_lengths(d_counts.as_ptr(), 32, 15, d_lengths);
+    patch_distance_codes_for_buggy_decoders(d_lengths);
 }
 
 /// Calculates block size in bits.
@@ -289,8 +453,8 @@ fn get_dynamic_lengths(litlens: *const u16, dists: *const u16, lstart: usize, le
 /// lstart: start of block
 /// lend: end of block (not inclusive)
 pub unsafe fn calculate_block_size(litlens: *const u16, dists: *const u16, lstart: usize, lend: usize, btype: i32) -> f64 {
-    let ll_lengths: [u32; 288] = uninitialized();
-    let d_lengths: [u32; 32] = uninitialized();
+    let mut ll_lengths: [u32; 288] = uninitialized();
+    let mut d_lengths: [u32; 32] = uninitialized();
 
     // bfinal and btype bits
     let mut result: f64 = 3.0;
@@ -299,9 +463,9 @@ pub unsafe fn calculate_block_size(litlens: *const u16, dists: *const u16, lstar
     assert!(btype == 1 || btype == 2);
 
     if btype == 1 {
-        get_fixed_tree(ll_lengths.as_ptr(), d_lengths.as_ptr());
+        get_fixed_tree(ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
     } else {
-        get_dynamic_lengths(litlens, dists, lstart, lend, ll_lengths.as_ptr(), d_lengths.as_ptr());
+        get_dynamic_lengths(litlens, dists, lstart, lend, ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
         result += calculate_tree_size(ll_lengths.as_ptr(), d_lengths.as_ptr()) as f64;
     }
 
