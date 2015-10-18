@@ -1,6 +1,7 @@
 //! Functions to compress according to the DEFLATE specification, using the
 //! "squeeze" LZ77 compression backend.
 
+use std::io::Write;
 use std::mem::{size_of, uninitialized};
 use std::ptr::{copy_nonoverlapping, null_mut};
 
@@ -491,9 +492,50 @@ pub unsafe fn calculate_block_size(litlens: *const u16, dists: *const u16, lstar
  * out: dynamic output array to append to
  * outsize: dynamic output array size
  */
-fn add_lz77_block(options: *const Options, btype: i32, is_final: bool, litlens: *const u16, dists: *const u16, lstart: usize, lend: usize,
-                  expected_data_size: usize, bp: *const u8, out: *const *const u8, outsize: *const usize) {
-    unimplemented!();
+unsafe fn add_lz77_block(options: *const Options, btype: i32, is_final: bool, litlens: *const u16, dists: *const u16, lstart: usize, lend: usize,
+                  expected_data_size: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    let mut ll_lengths: [u32; 288] = uninitialized();
+    let mut d_lengths: [u32; 32] = uninitialized();
+    let mut ll_symbols: [u32; 288] = uninitialized();
+    let mut d_symbols: [u32; 32] = uninitialized();
+
+    add_bit(if is_final { 1 } else { 0 }, bp, out, outsize);
+    add_bit(btype & 1, bp, out, outsize);
+    add_bit((btype & 2) >> 1, bp, out, outsize);
+
+    if btype == 1 {
+        // Fixed block.
+        get_fixed_tree(ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
+    } else {
+        // Dynamic block.
+        assert_eq!(btype, 2);
+
+        get_dynamic_lengths(litlens, dists, lstart, lend, ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
+
+        let detect_tree_size: u32 = *outsize as u32;
+        add_dynamic_tree(ll_lengths.as_ptr(), d_lengths.as_ptr(), bp, out, outsize);
+        if (*options).verbose {
+            println_err!("treesize: {}", *outsize - detect_tree_size as usize);
+        }
+    }
+
+    lengths_to_symbols(ll_lengths.as_ptr(), 288, 15, ll_symbols.as_mut_ptr());
+    lengths_to_symbols(d_lengths.as_ptr(), 32, 15, d_symbols.as_mut_ptr());
+
+    let detect_block_size: usize = *outsize;
+    add_lz77_data(litlens, dists, lstart, lend, expected_data_size, ll_symbols.as_ptr(), ll_lengths.as_ptr(), d_symbols.as_ptr(), d_lengths.as_ptr(), bp, out, outsize);
+
+    // End symbol.
+    add_huffman_bits(ll_symbols[256], ll_lengths[256], bp, out, outsize);
+
+    let mut uncompressed_size: usize = 0;
+    for i in lstart..lend {
+        uncompressed_size += if *dists.offset(i as isize) == 0 { 1 } else { *litlens.offset(i as isize) } as usize;
+    }
+    let compressed_size: usize = *outsize - detect_block_size;
+    if (*options).verbose {
+        println_err!("compressed block size: {} ({}k) (unc: {})", compressed_size, (compressed_size / 1024), uncompressed_size);
+    }
 }
 
 fn deflate_dynamic_block(options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *const u8, out: *const *const u8, outsize: *const usize) {
