@@ -50,11 +50,11 @@ impl LZ77Store {
 /// This is currently a bit under-used (with mainly only the longest match cache),
 /// but is kept for easy future expansion.
 pub struct BlockState {
-    options: *const Options,
+    pub options: *const Options,
 
     /// Cache for length/distance pairs found so far.
     #[cfg(feature = "longest-match-cache")]
-    lmc: *mut LongestMatchCache,
+    pub lmc: *mut LongestMatchCache,
 
     /// The start (inclusive) and end (not inclusive) of the current block.
     blockstart: usize,
@@ -63,17 +63,17 @@ pub struct BlockState {
 
 impl BlockState {
     #[cfg(feature = "longest-match-cache")]
-    pub fn new(options: *const Options, blockstart: usize, blockend: usize) -> BlockState {
+    pub fn new(options: *const Options, blockstart: usize, blockend: usize, lmc: *mut LongestMatchCache) -> BlockState {
         BlockState {
             options: options,
             blockstart: blockstart,
             blockend: blockend,
-            lmc: null_mut(),
+            lmc: lmc,
         }
     }
 
     #[cfg(not(feature = "longest-match-cache"))]
-    pub fn new(options: *const Options, blockstart: usize, blockend: usize) -> BlockState {
+    pub fn new(options: *const Options, blockstart: usize, blockend: usize, lmc: *mut ()) -> BlockState {
         BlockState {
             options: options,
             blockstart: blockstart,

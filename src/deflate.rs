@@ -10,7 +10,13 @@ use libc::funcs::c95::stdlib::{free, malloc};
 
 use super::Options;
 
-use lz77::lz77_counts;
+#[cfg(feature = "longest-match-cache")]
+use cache;
+#[cfg(feature = "longest-match-cache")]
+use cache::LongestMatchCache;
+
+use lz77::{clean_lz77_store, lz77_counts, BlockState, LZ77Store};
+use squeeze::{lz77_optimal, lz77_optimal_fixed};
 use tree::{calculate_bit_lengths, lengths_to_symbols};
 use util::{get_length_symbol, get_dist_symbol, get_length_extra_bits_value, get_length_extra_bits, get_dist_extra_bits_value, get_dist_extra_bits};
 
@@ -538,8 +544,52 @@ unsafe fn add_lz77_block(options: *const Options, btype: i32, is_final: bool, li
     }
 }
 
-fn deflate_dynamic_block(options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *const u8, out: *const *const u8, outsize: *const usize) {
-    unimplemented!();
+unsafe fn deflate_dynamic_block(options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    let blocksize: usize = inend - instart;
+
+    #[cfg(feature = "longest-match-cache")]
+    unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
+        BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
+    }
+    #[cfg(not(feature = "longest-match-cache"))]
+    fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
+        BlockState::new(options, instart, inend, null_mut())
+    }
+    let mut s = create_block_state(options, instart, inend, blocksize);
+
+    let mut store = LZ77Store::new();
+    let mut btype: i32 = 2;
+
+    lz77_optimal(&s, in_, instart, inend, &store);
+
+    // For small block, encoding with fixed tree can be smaller. For large block,
+    // don't bother doing this expensive test, dynamic tree will be better.
+    if store.size < 1000 {
+        let mut fixedstore = LZ77Store::new();
+        lz77_optimal_fixed(&s, in_, instart, inend, &fixedstore);
+        let dyncost: f64 = calculate_block_size(store.litlens, store.dists, 0, store.size, 2);
+        let fixedcost: f64 = calculate_block_size(fixedstore.litlens, fixedstore.dists, 0, fixedstore.size, 1);
+        if fixedcost < dyncost {
+            btype = 1;
+            clean_lz77_store(&mut store);
+            store = fixedstore;
+        } else {
+            clean_lz77_store(&mut fixedstore);
+        }
+    }
+
+    add_lz77_block(s.options, btype, is_final, store.litlens, store.dists, 0, store.size, blocksize, bp, out, outsize);
+
+    #[cfg(feature = "longest-match-cache")]
+    unsafe fn clean_cache(s: *mut BlockState) {
+        cache::clean_cache((*s).lmc);
+        free((*s).lmc as *mut c_void);
+    }
+    #[cfg(not(feature = "longest-match-cache"))]
+    fn clean_cache(s: *mut BlockState) { }
+    clean_cache(&mut s);
+
+    clean_lz77_store(&mut store);
 }
 
 fn deflate_fixed_block(options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *const u8, out: *const *const u8, outsize: *const usize) {

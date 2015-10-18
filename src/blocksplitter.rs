@@ -272,7 +272,7 @@ unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dists: 
  *   blocks is the amount of splitpoitns + 1.
  */
 unsafe fn block_split(options: *const Options, in_: *const u8, instart: usize, inend: usize, maxblocks: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
-    let s = BlockState::new(options, instart, inend);
+    let s = BlockState::new(options, instart, inend, null_mut());
     let mut lz77splitpoints: *mut usize = null_mut();
     let mut nlz77points: usize = 0;
     let mut store = LZ77Store::new();

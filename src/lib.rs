@@ -15,6 +15,7 @@ mod gzip_container;
 mod hash;
 mod katajainen;
 mod lz77;
+mod squeeze;
 mod tree;
 mod zlib_container;
 

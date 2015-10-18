@@ -22,7 +22,7 @@ pub struct LongestMatchCache {
 
 impl LongestMatchCache {
     /// Initializes the ZopfliLongestMatchCache.
-    unsafe fn new(blocksize: usize) -> LongestMatchCache {
+    pub unsafe fn new(blocksize: usize) -> *mut LongestMatchCache {
         let length: *mut u16 = malloc((size_of::<u16>() * blocksize) as size_t) as *mut u16;
         let dist: *mut u16 = malloc((size_of::<u16>() * blocksize) as size_t) as *mut u16;
 
@@ -44,16 +44,16 @@ impl LongestMatchCache {
         for i in 0..sublen_size {
             *sublen.offset(i as isize) = 0;
         }
-        LongestMatchCache {
-            length: length,
-            dist: dist,
-            sublen: sublen,
-        }
+        let lmc: *mut LongestMatchCache = malloc(size_of::<LongestMatchCache>() as size_t) as *mut LongestMatchCache;
+        (*lmc).length = length;
+        (*lmc).dist = dist;
+        (*lmc).sublen = sublen;
+        lmc
     }
 }
 
 /// Frees up the memory of the ZopfliLongestMatchCache.
-unsafe fn clean_cache(lmc: *mut LongestMatchCache) {
+pub unsafe fn clean_cache(lmc: *mut LongestMatchCache) {
     free((*lmc).length as *mut c_void);
     free((*lmc).dist as *mut c_void);
     free((*lmc).sublen as *mut c_void);
