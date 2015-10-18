@@ -195,7 +195,7 @@ unsafe fn find_largest_splittable_block(llsize: usize, done: *const u8, splitpoi
 /// dists: lz77 distances
 /// llsize: size of litlens and dists
 /// maxblocks: set a limit to the amount of blocks. Set to 0 to mean no limit.
-unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dists: *const u16, llsize: usize, maxblocks: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
+pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dists: *const u16, llsize: usize, maxblocks: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
     if llsize < 10 {
         // This code fails on tiny files.
         return;
@@ -271,7 +271,7 @@ unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dists: 
  * npoints: pointer to amount of splitpoints, for the dynamic array. The amount of
  *   blocks is the amount of splitpoitns + 1.
  */
-unsafe fn block_split(options: *const Options, in_: *const u8, instart: usize, inend: usize, maxblocks: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
+pub unsafe fn block_split(options: *const Options, in_: *const u8, instart: usize, inend: usize, maxblocks: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
     let s = BlockState::new(options, instart, inend, null_mut());
     let mut lz77splitpoints: *mut usize = null_mut();
     let mut nlz77points: usize = 0;
@@ -308,7 +308,7 @@ unsafe fn block_split(options: *const Options, in_: *const u8, instart: usize, i
 
 /// Divides the input into equal blocks, does not even take LZ77 lengths into
 /// account.
-unsafe fn block_split_simple(in_: *const u8, instart: usize, inend: usize, blocksize: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
+pub unsafe fn block_split_simple(in_: *const u8, instart: usize, inend: usize, blocksize: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
     let mut i: usize = instart;
     while i < inend {
         append_data!(i, *splitpoints, *npoints);

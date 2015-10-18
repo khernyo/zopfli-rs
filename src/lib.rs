@@ -110,6 +110,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn test1() {
         unsafe {
             roundtrip(Format::GZIP, b"");

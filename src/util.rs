@@ -22,7 +22,7 @@ pub const WINDOW_MASK: usize = WINDOW_SIZE - 1;
 /// be executed independently on each huge block.
 /// Dividing into huge blocks hurts compression, but not much relative to the size.
 /// Set this to, for example, 20MB (20000000). Set it to 0 to disable master blocks.
-const MASTER_BLOCK_SIZE: usize = 20000000;
+pub const MASTER_BLOCK_SIZE: usize = 20000000;
 
 /// Used to initialize costs for example
 pub const LARGE_FLOAT: f64 = 1e30;

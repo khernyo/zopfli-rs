@@ -9,6 +9,9 @@ use libc::{c_void, size_t};
 use libc::funcs::c95::stdlib::{free, malloc};
 
 use super::Options;
+use util;
+
+use blocksplitter::{block_split, block_split_lz77, block_split_simple};
 
 #[cfg(feature = "longest-match-cache")]
 use cache;
@@ -592,30 +595,149 @@ unsafe fn deflate_dynamic_block(options: *const Options, is_final: bool, in_: *c
     clean_lz77_store(&mut store);
 }
 
-fn deflate_fixed_block(options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *const u8, out: *const *const u8, outsize: *const usize) {
-    unimplemented!();
+unsafe fn deflate_fixed_block(options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    let blocksize: usize = inend - instart;
+
+    #[cfg(feature = "longest-match-cache")]
+    unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
+        BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
+    }
+    #[cfg(not(feature = "longest-match-cache"))]
+    fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
+        BlockState::new(options, instart, inend, null_mut())
+    }
+    let mut s = create_block_state(options, instart, inend, blocksize);
+
+    let mut store = LZ77Store::new();
+
+    lz77_optimal_fixed(&s, in_, instart, inend, &store);
+
+    add_lz77_block(s.options, 1, is_final, store.litlens, store.dists, 0, store.size, blocksize, bp, out, outsize);
+
+    #[cfg(feature = "longest-match-cache")]
+    unsafe fn clean_cache(s: *mut BlockState) {
+        cache::clean_cache((*s).lmc);
+        free((*s).lmc as *mut c_void);
+    }
+    #[cfg(not(feature = "longest-match-cache"))]
+    fn clean_cache(s: *mut BlockState) { }
+    clean_cache(&mut s);
+
+    clean_lz77_store(&mut store);
 }
 
-fn deflate_non_compressed_block(options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *const u8, out: *const *const u8, outsize: *const usize) {
-    unimplemented!();
+unsafe fn deflate_non_compressed_block(options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    let blocksize: usize = inend - instart;
+    let nlen: u16 = !blocksize as u16;
+
+    assert!(blocksize < 65536); // Non compressed blocks are max this size.
+    add_bit(if is_final { 1 } else { 0 }, bp, out, outsize);
+    // BTYPE 00
+    add_bit(0, bp, out, outsize);
+    add_bit(0, bp, out, outsize);
+
+    // Any bits of input up to the next byte boundary are ignored.
+    *bp = 0;
+
+    append_data!((blocksize % 256) as u8, *out, *outsize);
+    append_data!(((blocksize / 256) % 256) as u8, *out, *outsize);
+    append_data!((nlen % 256) as u8, *out, *outsize);
+    append_data!(((nlen / 256) % 256) as u8, *out, *outsize);
+
+    for i in instart..inend {
+        append_data!(*in_.offset(i as isize), *out, *outsize);
+    }
 }
 
-fn deflate_block(options: *const Options, btype: i32, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *const u8, out: *const *const u8, outsize: *const usize) {
-    unimplemented!();
+unsafe fn deflate_block(options: *const Options, btype: i32, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    if btype == 0 {
+        deflate_non_compressed_block(options, is_final, in_, instart, inend, bp, out, outsize);
+    } else if btype == 1 {
+        deflate_fixed_block(options, is_final, in_, instart, inend, bp, out, outsize);
+    } else {
+        deflate_dynamic_block(options, is_final, in_, instart, inend, bp, out, outsize);
+    }
 }
 
 /// Does squeeze strategy where first block splitting is done, then each block is
 /// squeezed.
 /// Parameters: see description of the ZopfliDeflate function.
-fn deflate_splitting_first(options: *const Options, btype: i32, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *const u8, out: *const *const u8, outsize: *const usize) {
-    unimplemented!();
+unsafe fn deflate_splitting_first(options: *const Options, btype: i32, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    let mut splitpoints: *mut usize = null_mut();
+    let mut npoints: usize = 0;
+    if btype == 0 {
+        block_split_simple(in_, instart, inend, 65535, &mut splitpoints, &mut npoints);
+    } else if btype == 1 {
+        // If all blocks are fixed tree, splitting into separate blocks only
+        // increases the total size. Leave npoints at 0, this represents 1 block.
+    } else {
+        block_split(options, in_, instart, inend, (*options).blocksplittingmax as usize, &mut splitpoints, &mut npoints);
+    }
+
+    for i in 0..npoints+1 {
+        let start: usize = if i == 0 { instart } else { *splitpoints.offset(i as isize - 1) };
+        let end: usize = if i == npoints { inend } else { *splitpoints.offset(i as isize) };
+        deflate_block(options, btype, i == npoints && is_final, in_, start, end, bp, out, outsize);
+    }
+
+    free(splitpoints as *mut c_void);
 }
 
 /// Does squeeze strategy where first the best possible lz77 is done, and then based
 /// on that data, block splitting is done.
 /// Parameters: see description of the ZopfliDeflate function.
-fn deflate_splitting_last(options: *const Options, btype: i32, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *const u8, out: *const *const u8, outsize: *const usize) {
-    unimplemented!();
+unsafe fn deflate_splitting_last(options: *const Options, btype: i32, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    #[cfg(feature = "longest-match-cache")]
+    unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
+        BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
+    }
+    #[cfg(not(feature = "longest-match-cache"))]
+    fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
+        BlockState::new(options, instart, inend, null_mut())
+    }
+    let mut s = create_block_state(options, instart, inend, inend - instart);
+
+    let mut store = LZ77Store::new();
+
+    if btype == 0 {
+        // This function only supports LZ77 compression. DeflateSplittingFirst
+        // supports the special case of noncompressed data. Punt it to that one.
+        deflate_splitting_first(options, btype, is_final, in_, instart, inend, bp, out, outsize);
+    }
+    assert!(btype == 1 || btype == 2);
+
+    if btype == 2 {
+        lz77_optimal(&s, in_, instart, inend, &store);
+    } else {
+        assert_eq!(btype, 1);
+        lz77_optimal_fixed(&s, in_, instart, inend, &store);
+    }
+
+    let mut splitpoints: *mut usize = null_mut();
+    let mut npoints: usize = 0;
+    if btype == 1 {
+        // If all blocks are fixed tree, splitting into separate blocks only
+        // increases the total size. Leave npoints at 0, this represents 1 block.
+    } else {
+        block_split_lz77(options, store.litlens, store.dists, store.size, (*options).blocksplittingmax as usize, &mut splitpoints, &mut npoints);
+    }
+
+    for i in 0..npoints+1 {
+        let start: usize = if i == 0 { 0 } else { *splitpoints.offset(i as isize - 1) };
+        let end: usize = if i == npoints { store.size } else { *splitpoints.offset(i as isize) };
+        add_lz77_block(options, btype, i == npoints && is_final, store.litlens, store.dists, start, end, 0, bp, out, outsize);
+    }
+
+    #[cfg(feature = "longest-match-cache")]
+    unsafe fn clean_cache(s: *mut BlockState) {
+        cache::clean_cache((*s).lmc);
+        free((*s).lmc as *mut c_void);
+    }
+    #[cfg(not(feature = "longest-match-cache"))]
+    fn clean_cache(s: *mut BlockState) { }
+    clean_cache(&mut s);
+
+    clean_lz77_store(&mut store);
 }
 
 /**
@@ -631,8 +753,16 @@ fn deflate_splitting_last(options: *const Options, btype: i32, is_final: bool, i
  * This function will usually output multiple deflate blocks. If final is 1, then
  * the final bit will be set on the last block.
 */
-fn deflate_part(options: *const Options, btype: i32, is_final: bool, input: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
-    unimplemented!();
+unsafe fn deflate_part(options: *const Options, btype: i32, is_final: bool, input: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    if (*options).blocksplitting {
+        if (*options).blocksplittinglast {
+            deflate_splitting_last(options, btype, is_final, input, instart, inend, bp, out, outsize);
+        } else {
+            deflate_splitting_first(options, btype, is_final, input, instart, inend, bp, out, outsize);
+        }
+    } else {
+        deflate_block(options, btype, is_final, input, instart, inend, bp, out, outsize);
+    }
 }
 
 /**
@@ -659,7 +789,22 @@ fn deflate_part(options: *const Options, btype: i32, is_final: bool, input: *con
  * outsize: pointer to the dynamic output array size.
  */
 pub unsafe fn deflate(options: *const Options, btype: i32, is_final: bool, input: *const u8, insize: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
-    *out = malloc(insize as u64) as *mut u8;
-    copy_nonoverlapping(input, *out, insize);
-    *outsize = insize;
+    let offset: usize = *outsize;
+
+    if util::MASTER_BLOCK_SIZE == 0 {
+        deflate_part(options, btype, is_final, input, 0, insize, bp, out, outsize);
+    } else {
+        let mut i: usize = 0;
+        while i < insize {
+            let masterfinal: bool = i + util::MASTER_BLOCK_SIZE >= insize;
+            let final2: bool = is_final && masterfinal;
+            let size: usize = if masterfinal { insize - i } else { util::MASTER_BLOCK_SIZE };
+            deflate_part(options, btype, final2, input, i, i + size, bp, out, outsize);
+            i += size;
+        }
+    }
+
+    if (*options).verbose {
+        println_err!("Original Size: {}, Deflate: {}, Compression: {}% Removed", insize, *outsize - offset, 100.0 * (insize - (*outsize - offset)) as f64 / insize as f64);
+    }
 }
