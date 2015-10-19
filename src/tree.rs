@@ -44,7 +44,7 @@ pub unsafe fn lengths_to_symbols(lengths: *const u32, n: usize, maxbits: u32, sy
     free(next_code as *mut c_void);
 }
 
-unsafe fn calculate_entropy(count: *const usize, n: usize, bitlengths: *mut f64) {
+pub unsafe fn calculate_entropy(count: *const usize, n: usize, bitlengths: *mut f64) {
     const K_INV_LOG2: f64 = 1.4426950408889;  // 1.0 / log(2.0)
     let mut sum = 0;
     for i in 0..n {

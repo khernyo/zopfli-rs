@@ -563,13 +563,13 @@ unsafe fn deflate_dynamic_block(options: *const Options, is_final: bool, in_: *c
     let mut store = LZ77Store::new();
     let mut btype: i32 = 2;
 
-    lz77_optimal(&s, in_, instart, inend, &store);
+    lz77_optimal(&s, in_, instart, inend, &mut store);
 
     // For small block, encoding with fixed tree can be smaller. For large block,
     // don't bother doing this expensive test, dynamic tree will be better.
     if store.size < 1000 {
         let mut fixedstore = LZ77Store::new();
-        lz77_optimal_fixed(&s, in_, instart, inend, &fixedstore);
+        lz77_optimal_fixed(&mut s, in_, instart, inend, &mut fixedstore);
         let dyncost: f64 = calculate_block_size(store.litlens, store.dists, 0, store.size, 2);
         let fixedcost: f64 = calculate_block_size(fixedstore.litlens, fixedstore.dists, 0, fixedstore.size, 1);
         if fixedcost < dyncost {
@@ -610,7 +610,7 @@ unsafe fn deflate_fixed_block(options: *const Options, is_final: bool, in_: *con
 
     let mut store = LZ77Store::new();
 
-    lz77_optimal_fixed(&s, in_, instart, inend, &store);
+    lz77_optimal_fixed(&mut s, in_, instart, inend, &mut store);
 
     add_lz77_block(s.options, 1, is_final, store.litlens, store.dists, 0, store.size, blocksize, bp, out, outsize);
 
@@ -707,10 +707,10 @@ unsafe fn deflate_splitting_last(options: *const Options, btype: i32, is_final: 
     assert!(btype == 1 || btype == 2);
 
     if btype == 2 {
-        lz77_optimal(&s, in_, instart, inend, &store);
+        lz77_optimal(&s, in_, instart, inend, &mut store);
     } else {
         assert_eq!(btype, 1);
-        lz77_optimal_fixed(&s, in_, instart, inend, &store);
+        lz77_optimal_fixed(&mut s, in_, instart, inend, &mut store);
     }
 
     let mut splitpoints: *mut usize = null_mut();

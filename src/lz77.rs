@@ -44,6 +44,17 @@ impl LZ77Store {
             size: 0,
         }
     }
+
+    pub unsafe fn init(store: *mut LZ77Store) {
+        (*store).litlens = null_mut();
+        (*store).dists = null_mut();
+        (*store).size = 0;
+    }
+
+    pub unsafe fn clean(store: *mut LZ77Store) {
+        free((*store).litlens as *mut c_void);
+        free((*store).dists as *mut c_void);
+    }
 }
 
 /// Some state information for compressing a block.
@@ -57,8 +68,8 @@ pub struct BlockState {
     pub lmc: *mut LongestMatchCache,
 
     /// The start (inclusive) and end (not inclusive) of the current block.
-    blockstart: usize,
-    blockend: usize,
+    pub blockstart: usize,
+    pub blockend: usize,
 }
 
 impl BlockState {
@@ -87,7 +98,7 @@ pub unsafe fn clean_lz77_store(store: *mut LZ77Store) {
     free((*store).dists as *mut c_void);
 }
 
-unsafe fn copy_lz77_store(source: *const LZ77Store, dest: *mut LZ77Store) {
+pub unsafe fn copy_lz77_store(source: *const LZ77Store, dest: *mut LZ77Store) {
     clean_lz77_store(dest);
     (*dest).litlens = malloc((size_of_val(&*(*dest).litlens) * (*source).size) as size_t) as *mut u16;
     (*dest).dists = malloc((size_of_val(&*(*dest).dists) * (*source).size) as size_t) as *mut u16;
@@ -106,7 +117,7 @@ unsafe fn copy_lz77_store(source: *const LZ77Store, dest: *mut LZ77Store) {
 
 /// Appends the length and distance to the LZ77 arrays of the ZopfliLZ77Store.
 /// context must be a ZopfliLZ77Store*.
-unsafe fn store_litlen_dist(length: u16, dist: u16, store: *mut LZ77Store) {
+pub unsafe fn store_litlen_dist(length: u16, dist: u16, store: *mut LZ77Store) {
     // Needed for using ZOPFLI_APPEND_DATA twice.
     let mut size2: usize = (*store).size;
     append_data!(length, (*store).litlens, (*store).size);
@@ -145,7 +156,7 @@ fn get_length_score(length: i32, distance: i32) -> i32 {
 }
 
 /// Verifies if length and dist are indeed valid, only used for assertion.
-unsafe fn verify_len_dist(data: *const u8, datasize: usize, pos: usize, dist: u16, length: u16) {
+pub unsafe fn verify_len_dist(data: *const u8, datasize: usize, pos: usize, dist: u16, length: u16) {
     /* TODO(lode): make this only run in a debug compile, it's for assert only. */
 
     assert!(pos + length as usize <= datasize);
@@ -286,7 +297,7 @@ unsafe fn store_in_longest_match_cache(s: *const BlockState, pos: usize, limit: 
  *     are used, the first 3 are ignored (the shortest length is 3. It is purely
  *     for convenience that the array is made 3 longer).
  */
-unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *const u8, pos: usize, size: usize, limit: usize, sublen: *mut u16, distance: *mut u16, length: *mut u16) {
+pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *const u8, pos: usize, size: usize, limit: usize, sublen: *mut u16, distance: *mut u16, length: *mut u16) {
     let mut limit = limit;
 
     let hpos: u16 = (pos & WINDOW_MASK) as u16;
