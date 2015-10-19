@@ -169,7 +169,7 @@ fn update_hash_same(array: *const u8, pos: usize, end: usize, hpos: u16, h: *mut
 #[cfg(feature = "hash-same")]
 unsafe fn update_hash_same(array: *const u8, pos: usize, end: usize, hpos: u16, h: *mut Hash) {
     let mut amount: usize = 0;
-    if *(*h).hash_same.same.offset(((pos - 1) & WINDOW_MASK) as isize) > 1 {
+    if *(*h).hash_same.same.offset((pos as isize - 1) & WINDOW_MASK as isize) > 1 {
         amount = (*(*h).hash_same.same.offset(((pos - 1) & WINDOW_MASK) as isize) - 1) as usize;
     }
     while pos + amount + 1 < end && *array.offset(pos as isize) == *array.offset((pos + amount + 1) as isize) && amount < !0u16 as usize {
