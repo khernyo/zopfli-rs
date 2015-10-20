@@ -150,15 +150,17 @@ unsafe fn extract_bit_lengths(chain: *const Node, leaves: *const Node, bitlength
 }
 
 /// Comparator for sorting the leaves. Has the function signature for qsort.
-unsafe fn leaf_comparator(a: *const c_void, b: *const c_void) -> i32 {
-    let node_a: *const Node = a as *const Node;
-    let node_b: *const Node = b as *const Node;
-    (*node_a).weight as i32 - (*node_b).weight as i32
+extern fn leaf_comparator(a: *const c_void, b: *const c_void) -> i32 {
+    unsafe {
+        let node_a: *const Node = a as *const Node;
+        let node_b: *const Node = b as *const Node;
+        (*node_a).weight as i32 - (*node_b).weight as i32
+    }
 }
 
 #[link(name="c")]
 extern {
-    fn qsort(base: *mut c_void, nmemb: size_t, size: size_t, compar: extern fn(*const c_void, *const c_void, *const c_void) -> i32);
+    fn qsort(base: *mut c_void, nmemb: size_t, size: size_t, compar: extern fn(*const c_void, *const c_void) -> i32);
 }
 
 pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, maxbits: i32, bitlengths: *mut u32) -> bool {
@@ -198,7 +200,7 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, max
     }
 
     // Sort the leaves from lightest to heaviest.
-    qsort(leaves as *mut c_void, numsymbols as size_t, mem::size_of::<Node>() as size_t, mem::transmute(&leaf_comparator));
+    qsort(leaves as *mut c_void, numsymbols as size_t, mem::size_of::<Node>() as size_t, leaf_comparator);
 
     // Initialize node memory pool.
     let pool_size = 2 * maxbits * (maxbits + 1);
@@ -227,4 +229,27 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, max
     free(leaves as *mut c_void);
     free(pool.nodes as *mut c_void);
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use std::mem::size_of;
+    use libc::{c_void, size_t};
+
+    use super::qsort;
+
+    extern fn comparator(a: *const c_void, b: *const c_void) -> i32 {
+        unsafe {
+            *(a as *const i32) - *(b as *const i32)
+        }
+    }
+
+    #[test]
+    fn test_qsort() {
+        unsafe {
+            let mut a: [i32; 5] = [3, 2, 4, 1, 5];
+            qsort(a.as_mut_ptr() as *mut c_void, a.len() as size_t, size_of::<i32>() as size_t, comparator);
+            assert_eq!(a, [1, 2, 3, 4, 5]);
+        }
+    }
 }
