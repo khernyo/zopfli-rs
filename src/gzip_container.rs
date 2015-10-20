@@ -89,6 +89,6 @@ pub unsafe fn compress(options: *const Options, input: *const u8, insize: usize,
     append_data!(((insize >> 24) % 256) as u8, *out, *outsize);
 
     if (*options).verbose {
-        println_err!("Original Size: {}, Gzip: {}, Compression: {}% Removed", insize, *outsize, 100.0 * (insize - *outsize) as f64 / insize as f64);
+        println_err!("Original Size: {}, Gzip: {}, Compression: {}% Removed", insize, *outsize, 100.0 * (insize as isize - *outsize as isize) as f64 / insize as f64);
     }
 }

@@ -183,7 +183,7 @@ fn update_hash_same_hash(array: *const u8, pos: usize, end: usize, hpos: u16, h:
 
 #[cfg(feature = "hash-same-hash")]
 unsafe fn update_hash_same_hash(array: *const u8, pos: usize, end: usize, hpos: u16, h: *mut Hash) {
-    (*h).hash_same_hash.val2 = (((*(*h).hash_same.same.offset(hpos as isize) - MIN_MATCH as u16) & 255) ^ (*h).val as u16) as i32;
+    (*h).hash_same_hash.val2 = ((*(*h).hash_same.same.offset(hpos as isize) as i32 - MIN_MATCH as i32) & 255) ^ (*h).val;
     *(*h).hash_same_hash.hashval2.offset(hpos as isize) = (*h).hash_same_hash.val2;
     if *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) != -1 && *(*h).hash_same_hash.hashval2.offset(*(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) as isize) == (*h).hash_same_hash.val2 {
         *(*h).hash_same_hash.prev2.offset(hpos as isize) = *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) as u16;
