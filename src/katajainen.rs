@@ -53,10 +53,10 @@ unsafe fn get_free_node(lists: *const *mut *mut Node, maxbits: i32, pool: *mut N
             for i in 0..(*pool).size {
                 (*(*pool).nodes.offset(i as isize)).in_use = false;
             }
-            if lists != null_mut() {
+            if !lists.is_null() {
                 for i in 0..maxbits*2 {
                     let mut node = *(*lists.offset((i / 2) as isize)).offset((i % 2) as isize);
-                    while node != null_mut() {
+                    while !node.is_null() {
                         (*node).in_use = true;
                         node = (*node).tail;
                     }
