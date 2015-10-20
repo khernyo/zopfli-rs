@@ -64,7 +64,7 @@ unsafe fn get_free_node(lists: *const *mut *mut Node, maxbits: i32, pool: *mut N
             }
             (*pool).next = (*pool).nodes;
         }
-        if (*(*pool).next).in_use {
+        if !(*(*pool).next).in_use {
             break;
         }
         (*pool).next = (*pool).next.offset(1);
