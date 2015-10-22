@@ -70,7 +70,7 @@ impl RanState {
 unsafe fn ran(state: *mut RanState) -> u32 {
     (*state).m_z = 36969 * ((*state).m_z & 65535) + ((*state).m_z >> 16);
     (*state).m_w = 18000 * ((*state).m_w & 65535) + ((*state).m_w >> 16);
-    return ((*state).m_z << 16) + (*state).m_w;  // 32-bit result.
+    return ((*state).m_z << 16).wrapping_add((*state).m_w);  // 32-bit result.
 }
 
 unsafe fn randomize_freqs(state: *mut RanState, freqs: *mut usize, n: i32) {
