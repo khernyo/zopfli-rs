@@ -805,6 +805,6 @@ pub unsafe fn deflate(options: *const Options, btype: i32, is_final: bool, input
     }
 
     if (*options).verbose {
-        println_err!("Original Size: {}, Deflate: {}, Compression: {}% Removed", insize, *outsize - offset, 100.0 * (insize - (*outsize - offset)) as f64 / insize as f64);
+        println_err!("Original Size: {}, Deflate: {}, Compression: {}% Removed", insize, *outsize - offset, 100.0 * (insize as isize - (*outsize - offset) as isize) as f64 / insize as f64);
     }
 }
