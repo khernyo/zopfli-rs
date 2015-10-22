@@ -46,7 +46,7 @@ unsafe fn init_node(weight: usize, count: i32, tail: *mut Node, node: *mut Node)
  * maxbits: Size of lists.
  * pool: Memory pool to get free node from.
  */
-unsafe fn get_free_node(lists: *const *mut *mut Node, maxbits: i32, pool: *mut NodePool) -> *mut Node {
+unsafe fn get_free_node(lists: *const [*mut Node; 2], maxbits: i32, pool: *mut NodePool) -> *mut Node {
     loop {
         if (*pool).next >= (*pool).nodes.offset((*pool).size as isize) {
             // Garbage collection
@@ -55,7 +55,7 @@ unsafe fn get_free_node(lists: *const *mut *mut Node, maxbits: i32, pool: *mut N
             }
             if !lists.is_null() {
                 for i in 0..maxbits*2 {
-                    let mut node = *(*lists.offset((i / 2) as isize)).offset((i % 2) as isize);
+                    let mut node = (*lists.offset((i / 2) as isize))[(i % 2) as usize];
                     while !node.is_null() {
                         (*node).in_use = true;
                         node = (*node).tail;
@@ -87,32 +87,32 @@ unsafe fn get_free_node(lists: *const *mut *mut Node, maxbits: i32, pool: *mut N
  * final: Whether this is the last time this function is called. If it is then it
  *   is no more needed to recursively call self.
  */
-unsafe fn boundary_pm(lists: *const *mut *mut Node, maxbits: i32, leaves: *const Node, numsymbols: i32, pool: *mut NodePool,
+unsafe fn boundary_pm(lists: *mut [*mut Node; 2], maxbits: i32, leaves: *const Node, numsymbols: i32, pool: *mut NodePool,
                       index: i32, is_final: bool) {
-    let lastcount = (**(*lists.offset(index as isize)).offset(1)).count; // Count of last chain of list.
+    let lastcount = (*(*lists.offset(index as isize))[1]).count; // Count of last chain of list.
 
     if index == 0 && lastcount >= numsymbols {
         return;
     }
 
     let newchain = get_free_node(lists, maxbits, pool);
-    let oldchain = *(*lists.offset(index as isize)).offset(1);
+    let oldchain = (*lists.offset(index as isize))[1];
 
     // These are set up before the recursive calls below, so that there is a list
     // pointing to the new node, to let the garbage collection know it's in use.
-    *(*lists.offset(index as isize)).offset(0) = oldchain;
-    *(*lists.offset(index as isize)).offset(1) = newchain;
+    (*lists.offset(index as isize))[0] = oldchain;
+    (*lists.offset(index as isize))[1] = newchain;
 
     if index == 0 {
         //New leaf node in list 0.
         init_node((*leaves.offset(lastcount as isize)).weight, lastcount + 1, null_mut(), newchain);
     } else {
-        let sum = (**(*lists.offset((index - 1) as isize)).offset(0)).weight + (**(*lists.offset((index - 1) as isize)).offset(0)).weight;
+        let sum = (*(*lists.offset((index - 1) as isize))[0]).weight + (*(*lists.offset((index - 1) as isize))[0]).weight;
         if lastcount < numsymbols && sum > (*leaves.offset(lastcount as isize)).weight {
             // New leaf inserted in list, so count is incremented.
             init_node((*leaves.offset(lastcount as isize)).weight, lastcount + 1, (*oldchain).tail, newchain);
         } else {
-            init_node(sum, lastcount, *(*lists.offset((index - 1) as isize)).offset(1), newchain);
+            init_node(sum, lastcount, (*lists.offset((index - 1) as isize))[1], newchain);
             if !is_final {
                 // Two lookahead chains of previous list used up, create new ones.
                 boundary_pm(lists, maxbits, leaves, numsymbols, pool, index - 1, false);
@@ -123,14 +123,14 @@ unsafe fn boundary_pm(lists: *const *mut *mut Node, maxbits: i32, leaves: *const
 }
 
 /// Initializes each list with as lookahead chains the two leaves with lowest weights.
-unsafe fn init_lists(pool: *mut NodePool, leaves: *const Node, maxbits: i32, lists: *const *mut *mut Node) {
+unsafe fn init_lists(pool: *mut NodePool, leaves: *const Node, maxbits: i32, lists: *mut [*mut Node; 2]) {
     let node0 = get_free_node(null(), maxbits, pool);
     let node1 = get_free_node(null(), maxbits, pool);
     init_node((*leaves.offset(0)).weight, 1, null_mut(), node0);
     init_node((*leaves.offset(1)).weight, 2, null_mut(), node1);
     for i in 0..maxbits {
-        *(*lists.offset(i as isize)).offset(0) = node0;
-        *(*lists.offset(i as isize)).offset(1) = node1;
+        (*lists.offset(i as isize))[0] = node0;
+        (*lists.offset(i as isize))[1] = node1;
     }
 }
 
@@ -212,7 +212,8 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, max
 
     // Array of lists of chains. Each list requires only two lookahead chains at
     // a time, so each list is a array of two Node*'s.
-    let lists: *const *mut *mut Node = malloc((maxbits as usize * mem::size_of::<*const *const Node>()) as size_t) as *const *mut *mut Node;
+    let mut lists: *mut [*mut Node; 2] = mem::uninitialized();
+    lists = malloc((maxbits as usize * mem::size_of_val(&*lists)) as size_t) as *mut [*mut Node; 2];
     init_lists(&mut pool, leaves, maxbits, lists);
 
     // In the last list, 2 * numsymbols - 2 active chains need to be created. Two
@@ -223,7 +224,7 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, max
         boundary_pm(lists, maxbits, leaves, numsymbols as i32, &mut pool, maxbits - 1, is_final);
     }
 
-    extract_bit_lengths(*(*lists.offset(maxbits as isize - 1)).offset(1), leaves, bitlengths);
+    extract_bit_lengths((*lists.offset(maxbits as isize - 1))[1], leaves, bitlengths);
 
     free(lists as *mut c_void);
     free(leaves as *mut c_void);
