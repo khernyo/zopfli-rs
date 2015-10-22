@@ -179,8 +179,8 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, max
     for i in 0..n {
         if *frequencies.offset(i as isize) != 0 {
             (*leaves.offset(numsymbols)).weight = *frequencies.offset(i as isize);
-            (*leaves.offset(numsymbols)).count = i;
-            numsymbols = numsymbols + 1;
+            (*leaves.offset(numsymbols)).count = i; // Index of symbol this leaf represents.
+            numsymbols += 1;
         }
     }
 
