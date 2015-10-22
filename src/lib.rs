@@ -85,45 +85,65 @@ pub unsafe fn compress(options: *const Options, output_type: Format, input: *con
     }
 }
 
-pub fn decompress(bytes: &[u8]) -> &[u8] {
-    bytes
-}
-
 #[cfg(test)]
 mod test {
-    extern crate compress;
     extern crate flate2;
 
     use libc::{c_void, size_t};
     use libc::funcs::c95::string::memcmp;
+    use std::io::Read;
     use std::ptr::{null, null_mut};
+    use std::slice;
+
+    use self::flate2::read::{DeflateDecoder, GzDecoder, ZlibDecoder};
     
     use super::*;
     
     unsafe fn roundtrip(format: Format, bytes: &[u8]) {
-        let mut options = Options::new();
+        let mut options = Options { verbose: true, verbose_more: true, .. Options::new() };
         let mut compressed: *mut u8 = null_mut();
         let mut compressed_size: usize = 0;
         compress(&options, format, bytes.as_ptr(), bytes.len(), &mut compressed, &mut compressed_size);
-        let decompressed = compressed; // decompress(compressed);
-        assert!(memcmp(bytes.as_ptr() as *const c_void, decompressed as *const c_void, bytes.len() as size_t) == 0);
+        let decompressed = match format {
+            Format::GZIP => {
+                let mut d = GzDecoder::new(slice::from_raw_parts(compressed, compressed_size)).unwrap();
+                let mut s = Vec::new();
+                d.read_to_end(&mut s).unwrap();
+                s
+            }
+            Format::ZLIB => {
+                let mut d = ZlibDecoder::new(slice::from_raw_parts(compressed, compressed_size));
+                let mut s = Vec::new();
+                d.read_to_end(&mut s).unwrap();
+                s
+            }
+            Format::DEFLATE => {
+                let mut d = DeflateDecoder::new(slice::from_raw_parts(compressed, compressed_size));
+                let mut s = Vec::new();
+                d.read_to_end(&mut s).unwrap();
+                s
+            }
+        };
+        assert!(memcmp(bytes.as_ptr() as *const c_void, decompressed.as_ptr() as *const c_void, bytes.len() as size_t) == 0);
+    }
+
+    #[test]
+    fn roundtrips() {
+        unsafe {
+            for format in vec![Format::GZIP, Format::ZLIB, Format::DEFLATE] {
+                roundtrip(format, b"1");
+                roundtrip(format, b"foobar");
+            }
+        }
     }
 
     #[test]
     #[ignore]
-    fn test1() {
+    fn compress_zero_bytes() {
         unsafe {
-            roundtrip(Format::GZIP, b"");
-            roundtrip(Format::GZIP, b"1");
-            roundtrip(Format::GZIP, b"foobar");
-
-            roundtrip(Format::ZLIB, b"");
-            roundtrip(Format::ZLIB, b"1");
-            roundtrip(Format::ZLIB, b"foobar");
-
-            roundtrip(Format::DEFLATE, b"");
-            roundtrip(Format::DEFLATE, b"1");
-            roundtrip(Format::DEFLATE, b"foobar");
+            for format in vec![Format::GZIP, Format::ZLIB, Format::DEFLATE] {
+                roundtrip(format, b"");
+            }
         }
     }
 }
