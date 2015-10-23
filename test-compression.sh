@@ -19,7 +19,7 @@ function compare_compression() {
     FILE=$1
     echo $FILE
 
-    for format in gzip zlib deflate; do
+    for format in deflate zlib gzip; do
         F1=$TMP_DIR/`basename $i`.zopfli.$format
         F2=$TMP_DIR/`basename $i`.zopfli-rs.$format
         $ZOPFLI -c $i >$F1
