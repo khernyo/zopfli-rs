@@ -100,7 +100,7 @@ mod test {
     use super::*;
     
     unsafe fn roundtrip(format: Format, bytes: &[u8]) {
-        let options = Options { verbose: true, verbose_more: true, .. Options::new() };
+        let options = Options { verbose: false, verbose_more: false, .. Options::new() };
         let mut compressed: *mut u8 = null_mut();
         let mut compressed_size: usize = 0;
         compress(&options, format, bytes.as_ptr(), bytes.len(), &mut compressed, &mut compressed_size);
