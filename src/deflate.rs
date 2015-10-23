@@ -555,7 +555,7 @@ unsafe fn deflate_dynamic_block(options: *const Options, is_final: bool, in_: *c
         BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
     }
     #[cfg(not(feature = "longest-match-cache"))]
-    fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
+    fn create_block_state(options: *const Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
         BlockState::new(options, instart, inend, null_mut())
     }
     let mut s = create_block_state(options, instart, inend, blocksize);
@@ -589,7 +589,7 @@ unsafe fn deflate_dynamic_block(options: *const Options, is_final: bool, in_: *c
         free((*s).lmc as *mut c_void);
     }
     #[cfg(not(feature = "longest-match-cache"))]
-    fn clean_cache(s: *mut BlockState) { }
+    fn clean_cache(_s: *mut BlockState) { }
     clean_cache(&mut s);
 
     clean_lz77_store(&mut store);
@@ -603,7 +603,7 @@ unsafe fn deflate_fixed_block(options: *const Options, is_final: bool, in_: *con
         BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
     }
     #[cfg(not(feature = "longest-match-cache"))]
-    fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
+    fn create_block_state(options: *const Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
         BlockState::new(options, instart, inend, null_mut())
     }
     let mut s = create_block_state(options, instart, inend, blocksize);
@@ -620,7 +620,7 @@ unsafe fn deflate_fixed_block(options: *const Options, is_final: bool, in_: *con
         free((*s).lmc as *mut c_void);
     }
     #[cfg(not(feature = "longest-match-cache"))]
-    fn clean_cache(s: *mut BlockState) { }
+    fn clean_cache(_s: *mut BlockState) { }
     clean_cache(&mut s);
 
     clean_lz77_store(&mut store);
@@ -692,7 +692,7 @@ unsafe fn deflate_splitting_last(options: *const Options, btype: i32, is_final: 
         BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
     }
     #[cfg(not(feature = "longest-match-cache"))]
-    fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
+    fn create_block_state(options: *const Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
         BlockState::new(options, instart, inend, null_mut())
     }
     let mut s = create_block_state(options, instart, inend, inend - instart);
@@ -734,7 +734,7 @@ unsafe fn deflate_splitting_last(options: *const Options, btype: i32, is_final: 
         free((*s).lmc as *mut c_void);
     }
     #[cfg(not(feature = "longest-match-cache"))]
-    fn clean_cache(s: *mut BlockState) { }
+    fn clean_cache(_s: *mut BlockState) { }
     clean_cache(&mut s);
 
     clean_lz77_store(&mut store);

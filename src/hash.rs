@@ -39,7 +39,7 @@ pub struct HashSameHash {
 
 impl HashSameHash {
     #[cfg(not(feature = "hash-same-hash"))]
-    fn new(window_size: usize) -> HashSameHash {
+    fn new(_window_size: usize) -> HashSameHash {
         HashSameHash
     }
 
@@ -68,7 +68,7 @@ impl HashSameHash {
     }
 
     #[cfg(not(feature = "hash-same-hash"))]
-    fn clean(h: *const HashSameHash) { }
+    fn clean(_h: *const HashSameHash) { }
 
     #[cfg(feature = "hash-same-hash")]
     unsafe fn clean(h: *const HashSameHash) {
@@ -89,7 +89,7 @@ pub struct HashSame {
 
 impl HashSame {
     #[cfg(not(feature = "hash-same"))]
-    fn new(window_size: usize) -> HashSame {
+    fn new(_window_size: usize) -> HashSame {
         HashSame
     }
 
@@ -106,7 +106,7 @@ impl HashSame {
     }
 
     #[cfg(not(feature = "hash-same"))]
-    fn clean(h: *const HashSame) { }
+    fn clean(_h: *const HashSame) { }
 
     #[cfg(feature = "hash-same")]
     unsafe fn clean(h: *const HashSame) {
@@ -164,7 +164,7 @@ unsafe fn update_hash_value(h: *mut Hash, c: u8) {
 }
 
 #[cfg(not(feature = "hash-same"))]
-fn update_hash_same(array: *const u8, pos: usize, end: usize, hpos: u16, h: *mut Hash) { }
+fn update_hash_same(_array: *const u8, _pos: usize, _end: usize, _hpos: u16, _h: *mut Hash) { }
 
 #[cfg(feature = "hash-same")]
 unsafe fn update_hash_same(array: *const u8, pos: usize, end: usize, hpos: u16, h: *mut Hash) {
@@ -179,7 +179,7 @@ unsafe fn update_hash_same(array: *const u8, pos: usize, end: usize, hpos: u16, 
 }
 
 #[cfg(not(feature = "hash-same-hash"))]
-fn update_hash_same_hash(hpos: u16, h: *mut Hash) { }
+fn update_hash_same_hash(_hpos: u16, _h: *mut Hash) { }
 
 #[cfg(feature = "hash-same-hash")]
 unsafe fn update_hash_same_hash(hpos: u16, h: *mut Hash) {

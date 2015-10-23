@@ -9,7 +9,7 @@ use deflate::calculate_block_size;
 use hash::{update_hash, warmup_hash, Hash};
 use lz77::{clean_lz77_store, copy_lz77_store, find_longest_match, lz77_greedy, store_litlen_dist, verify_len_dist, BlockState, LZ77Store};
 use tree::calculate_entropy;
-use util::{get_dist_extra_bits, get_dist_symbol, get_length_extra_bits, get_length_symbol, LARGE_FLOAT, MAX_MATCH, MIN_MATCH, WINDOW_MASK, WINDOW_SIZE};
+use util::{get_dist_extra_bits, get_dist_symbol, get_length_extra_bits, get_length_symbol, LARGE_FLOAT, MAX_MATCH, MIN_MATCH, WINDOW_SIZE};
 
 struct SymbolStats {
     /// The literal and length symbols.
@@ -226,6 +226,7 @@ unsafe fn get_best_lengths(s: *const BlockState, in_: *const u8, instart: usize,
 
         #[cfg(feature = "shortcut-long-repetitions")]
         unsafe fn shortcut_long_repetitions(in_: *const u8, instart: usize, inend: usize, costmodel: CostModelFun, costcontext: *const c_void, length_array: *mut u16, h: *mut Hash, i: *mut usize, j: *mut usize, costs: *mut f32) {
+            use util::WINDOW_MASK;
             // If we're in a long repetition of the same character and have more than
             // ZOPFLI_MAX_MATCH characters before and after our position.
             if *(*h).hash_same.same.offset((*i & WINDOW_MASK) as isize) as usize > MAX_MATCH * 2
@@ -246,8 +247,7 @@ unsafe fn get_best_lengths(s: *const BlockState, in_: *const u8, instart: usize,
                 }
         }
         #[cfg(not(feature = "shortcut-long-repetitions"))]
-        fn shortcut_long_repetitions(in_: *const u8, instart: usize, inend: usize, costmodel: CostModelFun, costcontext: *const c_void, length_array: *const u16, h: *const Hash, i: *const usize, j: *const usize, costs: *const f32) {
-        }
+        fn shortcut_long_repetitions(_in: *const u8, _instart: usize, _inend: usize, _costmodel: CostModelFun, _costcontext: *const c_void, _length_array: *const u16, _h: *const Hash, _i: *const usize, _j: *const usize, _costs: *const f32) { }
         shortcut_long_repetitions(in_, instart, inend, costmodel, costcontext, length_array, h, &mut i, &mut j, costs);
 
         find_longest_match(s, h, in_, i, inend, MAX_MATCH, sublen.as_mut_ptr(), &mut dist, &mut leng);

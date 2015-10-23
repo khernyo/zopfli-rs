@@ -3,7 +3,7 @@
 
 use std;
 use std::mem::{size_of, size_of_val, uninitialized};
-use std::ptr::{null, null_mut};
+use std::ptr::null_mut;
 
 use libc::funcs::c95::stdlib::{free, malloc};
 use libc::{c_void, size_t};
@@ -84,7 +84,7 @@ impl BlockState {
     }
 
     #[cfg(not(feature = "longest-match-cache"))]
-    pub fn new(options: *const Options, blockstart: usize, blockend: usize, lmc: *mut ()) -> BlockState {
+    pub fn new(options: *const Options, blockstart: usize, blockend: usize, _lmc: *mut ()) -> BlockState {
         BlockState {
             options: options,
             blockstart: blockstart,
@@ -213,7 +213,7 @@ unsafe fn get_match(scan: *const u8, match_: *const u8, end: *const u8, safe_end
 }
 
 #[cfg(not(feature = "longest-match-cache"))]
-fn try_get_from_longest_match_cache(s: *const BlockState, pos: usize, limit: *mut usize, sublen: *mut u16, distance: *mut u16, length: *mut u16) -> bool {
+fn try_get_from_longest_match_cache(_s: *const BlockState, _pos: usize, _limit: *mut usize, _sublen: *mut u16, _distance: *mut u16, _length: *mut u16) -> bool {
     false
 }
 
@@ -257,7 +257,7 @@ unsafe fn try_get_from_longest_match_cache(s: *const BlockState, pos: usize, lim
 }
 
 #[cfg(not(feature = "longest-match-cache"))]
-fn store_in_longest_match_cache(s: *const BlockState, pos: usize, limit: usize, sublen: *const u16, distance: u16, length: u16) { }
+fn store_in_longest_match_cache(_s: *const BlockState, _pos: usize, _limit: usize, _sublen: *const u16, _distance: u16, _length: u16) { }
 
 /// Stores the found sublen, distance and length in the longest match cache, if
 /// possible.
@@ -271,7 +271,7 @@ unsafe fn store_in_longest_match_cache(s: *const BlockState, pos: usize, limit: 
     // that this cache value is not filled in yet.
     let cache_available: bool = (*s).lmc != null_mut() && (*(*(*s).lmc).length.offset(lmcpos) == 0 || *(*(*s).lmc).dist.offset(lmcpos) != 0);
 
-    if (*s).lmc != null_mut() && limit == MAX_MATCH && sublen != null() && !cache_available {
+    if (*s).lmc != null_mut() && limit == MAX_MATCH && !sublen.is_null() && !cache_available {
         assert_eq!(*(*(*s).lmc).length.offset(lmcpos), 1);
         assert_eq!(*(*(*s).lmc).dist.offset(lmcpos), 0);
         *(*(*s).lmc).dist.offset(lmcpos) = if length < MIN_MATCH as u16 { 0 } else { distance };
@@ -365,7 +365,7 @@ pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *c
             // Testing the byte at position bestlength first, goes slightly faster.
             if pos + bestlength as usize >= size || *scan.offset(bestlength as isize) == *match_.offset(bestlength as isize) {
                 #[cfg(not(feature = "hash-same"))]
-                fn do_hash_same(h: *const Hash, pos: usize, limit: usize, scan: *mut *const u8, match_: *mut *const u8, dist: u32) {}
+                fn do_hash_same(_h: *const Hash, _pos: usize, _limit: usize, _scan: *mut *const u8, _match: *mut *const u8, _dist: u32) { }
 
                 #[cfg(feature = "hash-same")]
                 unsafe fn do_hash_same(h: *const Hash, pos: usize, limit: usize, scan: *mut *const u8, match_: *mut *const u8, dist: u32) {
@@ -402,7 +402,7 @@ pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *c
         }
 
         #[cfg(not(feature = "hash-same-hash"))]
-        fn do_hash_same_hash(h: *const Hash, hhead: *mut *const i32, hprev: *mut *const u16, hhashval: *mut *const i32, hval: *mut i32, bestlength: u16, hpos: u16, p: u16) { }
+        fn do_hash_same_hash(_h: *const Hash, _hhead: *mut *const i32, _hprev: *mut *const u16, _hhashval: *mut *const i32, _hval: *mut i32, _bestlength: u16, _hpos: u16, _p: u16) { }
 
         #[cfg(feature = "hash-same-hash")]
         unsafe fn do_hash_same_hash(h: *const Hash, hhead: *mut *const i32, hprev: *mut *const u16, hhashval: *mut *const i32, hval: *mut i32, bestlength: u16, hpos: u16, p: u16) {
