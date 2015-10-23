@@ -451,7 +451,6 @@ pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *c
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
 pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, inend: usize, store: *mut LZ77Store) {
-    let i: usize = 0;
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
     let mut dummysublen_array: [u16; 259] = uninitialized();
     let dummysublen = dummysublen_array.as_mut_ptr();
@@ -473,7 +472,8 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
     let mut match_available: bool = false;
     // End of lazy matching.
 
-    for mut i in instart..inend {
+    let mut i: usize = instart;
+    while i < inend {
         hash::update_hash(in_, i, inend, h);
 
         let mut dist: u16 = 0;
@@ -492,6 +492,7 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
                         match_available = true;
                         prev_length = leng as u32;
                         prev_match = dist as u32;
+                        i += 1;
                         continue;
                     }
                 } else {
@@ -506,12 +507,14 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
                         i += 1;
                         hash::update_hash(in_, i, inend, h);
                     }
+                    i += 1;
                     continue;
                 }
             } else if lengthscore as usize >= MIN_MATCH && (leng as usize) < MAX_MATCH {
                 match_available = true;
                 prev_length = leng as u32;
                 prev_match = dist as u32;
+                i += 1;
                 continue;
             }
             // End of lazy matching.
@@ -530,6 +533,7 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
             i += 1;
             hash::update_hash(in_, i, inend, h);
         }
+        i += 1;
     }
 
     hash::Hash::clean(h);
