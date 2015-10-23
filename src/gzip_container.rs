@@ -1,7 +1,6 @@
 //! Functions to compress according to the Gzip specification.
 
 use std::io::Write;
-use std::mem::uninitialized;
 
 use super::Options;
 
@@ -17,7 +16,7 @@ static mut crc_table_computed: bool = false;
 unsafe fn make_crc_table() {
     for n in 0..256 {
         let mut c: u64 = n as u64;
-        for k in 0..8 {
+        for _ in 0..8 {
             if c & 1 == 1 {
                 c = 0xedb88320u64 ^ (c >> 1);
             } else {

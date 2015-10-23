@@ -92,7 +92,7 @@ mod test {
     use libc::{c_void, size_t};
     use libc::funcs::c95::string::memcmp;
     use std::io::Read;
-    use std::ptr::{null, null_mut};
+    use std::ptr::null_mut;
     use std::slice;
 
     use self::flate2::read::{DeflateDecoder, GzDecoder, ZlibDecoder};
@@ -100,7 +100,7 @@ mod test {
     use super::*;
     
     unsafe fn roundtrip(format: Format, bytes: &[u8]) {
-        let mut options = Options { verbose: true, verbose_more: true, .. Options::new() };
+        let options = Options { verbose: true, verbose_more: true, .. Options::new() };
         let mut compressed: *mut u8 = null_mut();
         let mut compressed_size: usize = 0;
         compress(&options, format, bytes.as_ptr(), bytes.len(), &mut compressed, &mut compressed_size);

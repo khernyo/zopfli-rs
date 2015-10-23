@@ -102,7 +102,7 @@ type CostModelFun = unsafe fn (litlen: u32, dist: u32, context: *const c_void) -
 
 /// Cost model which should exactly match fixed tree.
 /// type: CostModelFun
-unsafe fn get_cost_fixed(litlen: u32, dist: u32, unused: *const c_void) -> f64 {
+unsafe fn get_cost_fixed(litlen: u32, dist: u32, _unused: *const c_void) -> f64 {
     if dist == 0 {
         if litlen <= 143 {
             8f64
@@ -190,8 +190,6 @@ unsafe fn get_cost_model_min_cost(costmodel: CostModelFun, costcontext: *const c
 unsafe fn get_best_lengths(s: *const BlockState, in_: *const u8, instart: usize, inend: usize, costmodel: CostModelFun, costcontext: *const c_void, length_array: *mut u16) -> f64 {
     // Best cost to get here so far.
     let blocksize: usize = inend - instart;
-    let i: usize = 0;
-    let k: usize;
     let mut leng: u16 = uninitialized();
     let mut dist: u16 = uninitialized();
     let mut sublen: [u16; 259] = uninitialized();
@@ -238,7 +236,7 @@ unsafe fn get_best_lengths(s: *const BlockState, in_: *const u8, instart: usize,
                     // Set the length to reach each one to ZOPFLI_MAX_MATCH, and the cost to
                     // the cost corresponding to that length. Doing this, we skip
                     // ZOPFLI_MAX_MATCH values to avoid calling ZopfliFindLongestMatch.
-                    for k in 0..MAX_MATCH {
+                    for _ in 0..MAX_MATCH {
                         *costs.offset((*j + MAX_MATCH) as isize) = (*costs.offset(*j as isize) as f64 + symbolcost) as f32;
                         *length_array.offset((*j + MAX_MATCH) as isize) = MAX_MATCH as u16;
                         *i += 1;
@@ -327,7 +325,7 @@ unsafe fn trace_backwards(size: usize, length_array: *const u16, path: *mut *mut
 unsafe fn follow_path(s: *const BlockState, in_: *const u8, instart: usize, inend: usize, path: *const u16, pathsize: usize, store: *mut LZ77Store) {
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
 
-    let mut total_length_test: usize = 0;
+    let mut _total_length_test: usize = 0;
 
     if instart == inend {
         return;
@@ -357,11 +355,11 @@ unsafe fn follow_path(s: *const BlockState, in_: *const u8, instart: usize, inen
             assert!(!(dummy_length != length && length > 2 && dummy_length > 2));
             verify_len_dist(in_, inend, pos, dist, length);
             store_litlen_dist(length, dist, store);
-            total_length_test += length as usize;
+            _total_length_test += length as usize;
         } else {
             length = 1;
             store_litlen_dist(*in_.offset(pos as isize) as u16, 0, store);
-            total_length_test += 1;
+            _total_length_test += 1;
         }
 
         assert!(pos + length as usize <= inend);
@@ -440,7 +438,6 @@ pub unsafe fn lz77_optimal(s: *const BlockState, in_: *const u8, instart: usize,
     let mut stats = SymbolStats::new();
     let mut beststats: SymbolStats = uninitialized();
     let mut laststats: SymbolStats = uninitialized();
-    let i: i32;
     let mut cost: f64;
     let mut bestcost: f64 = LARGE_FLOAT;
     let mut lastcost: f64 = 0f64;

@@ -3,7 +3,7 @@
 
 use std::io::Write;
 use std::mem::{size_of, uninitialized};
-use std::ptr::{copy_nonoverlapping, null_mut};
+use std::ptr::null_mut;
 
 use libc::{c_void, size_t};
 use libc::funcs::c95::stdlib::{free, malloc};
@@ -626,7 +626,7 @@ unsafe fn deflate_fixed_block(options: *const Options, is_final: bool, in_: *con
     clean_lz77_store(&mut store);
 }
 
-unsafe fn deflate_non_compressed_block(options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+unsafe fn deflate_non_compressed_block(_options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
     let blocksize: usize = inend - instart;
     let nlen: u16 = !blocksize as u16;
 

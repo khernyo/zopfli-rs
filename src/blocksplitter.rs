@@ -97,7 +97,7 @@ unsafe fn estimate_cost(litlens: *const u16, dists: *const u16, lstart: usize, l
 struct SplitCostContext {
     litlens: *const u16,
     dists: *const u16,
-    llsize: usize,
+    _llsize: usize,
     start: usize,
     end: usize,
 }
@@ -220,7 +220,7 @@ pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dis
         let mut c = SplitCostContext {
             litlens: litlens,
             dists: dists,
-            llsize: llsize,
+            _llsize: llsize,
             start: lstart,
             end: lend,
         };
@@ -308,7 +308,7 @@ pub unsafe fn block_split(options: *const Options, in_: *const u8, instart: usiz
 
 /// Divides the input into equal blocks, does not even take LZ77 lengths into
 /// account.
-pub unsafe fn block_split_simple(in_: *const u8, instart: usize, inend: usize, blocksize: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
+pub unsafe fn block_split_simple(_in: *const u8, instart: usize, inend: usize, blocksize: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
     let mut i: usize = instart;
     while i < inend {
         append_data!(i, *splitpoints, *npoints);

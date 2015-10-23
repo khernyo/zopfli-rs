@@ -179,10 +179,10 @@ unsafe fn update_hash_same(array: *const u8, pos: usize, end: usize, hpos: u16, 
 }
 
 #[cfg(not(feature = "hash-same-hash"))]
-fn update_hash_same_hash(array: *const u8, pos: usize, end: usize, hpos: u16, h: *mut Hash) { }
+fn update_hash_same_hash(hpos: u16, h: *mut Hash) { }
 
 #[cfg(feature = "hash-same-hash")]
-unsafe fn update_hash_same_hash(array: *const u8, pos: usize, end: usize, hpos: u16, h: *mut Hash) {
+unsafe fn update_hash_same_hash(hpos: u16, h: *mut Hash) {
     (*h).hash_same_hash.val2 = ((*(*h).hash_same.same.offset(hpos as isize) as i32 - MIN_MATCH as i32) & 255) ^ (*h).val;
     *(*h).hash_same_hash.hashval2.offset(hpos as isize) = (*h).hash_same_hash.val2;
     if *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) != -1 && *(*h).hash_same_hash.hashval2.offset(*(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) as isize) == (*h).hash_same_hash.val2 {
@@ -205,10 +205,10 @@ pub unsafe fn update_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash
     *(*h).head.offset((*h).val as isize) = hpos as i32;
 
     update_hash_same(array, pos, end, hpos, h);
-    update_hash_same_hash(array, pos, end, hpos, h);
+    update_hash_same_hash(hpos, h);
 }
 
-pub unsafe fn warmup_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash) {
+pub unsafe fn warmup_hash(array: *const u8, pos: usize, _end: usize, h: *mut Hash) {
     update_hash_value(h, *array.offset(pos as isize + 0));
     update_hash_value(h, *array.offset(pos as isize + 1));
 }

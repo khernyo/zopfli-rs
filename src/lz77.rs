@@ -479,7 +479,7 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
         let mut dist: u16 = 0;
         let mut leng: u16 = 0;
         find_longest_match(s, h, in_, i, inend, MAX_MATCH, dummysublen, &mut dist, &mut leng);
-        let mut lengthscore: i32 = get_length_score(leng as i32, dist as i32);
+        let lengthscore: i32 = get_length_score(leng as i32, dist as i32);
 
         if cfg!(feature = "lazy-matching") {
             // Lazy matching.
@@ -498,11 +498,10 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
                     // Add previous to output.
                     leng = prev_length as u16;
                     dist = prev_match as u16;
-                    lengthscore = prevlengthscore;
                     // Add to output.
                     verify_len_dist(in_, inend, i - 1, dist, leng);
                     store_litlen_dist(leng, dist, store);
-                    for j in 2..leng {
+                    for _ in 2..leng {
                         assert!(i < inend);
                         i += 1;
                         hash::update_hash(in_, i, inend, h);
@@ -526,7 +525,7 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
             leng = 1;
             store_litlen_dist(*in_.offset(i as isize) as u16, 0, store);
         }
-        for j in 1..leng {
+        for _ in 1..leng {
             assert!(i < inend);
             i += 1;
             hash::update_hash(in_, i, inend, h);
