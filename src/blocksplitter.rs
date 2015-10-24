@@ -157,7 +157,7 @@ unsafe fn print_block_split_points(litlens: *const u16, dists: *const u16, llsiz
     for i in 0..npoints {
         print_err!(" {:x}", *splitpoints.offset(i as isize) as i32);
     }
-    println_err!("");
+    println_err!(")");
 
     free(splitpoints as *mut c_void);
 }
