@@ -145,4 +145,16 @@ mod test {
             }
         }
     }
+
+    #[test]
+    fn test1() {
+        unsafe {
+            let options = Options { verbose: false, verbose_more: false, .. Options::new() };
+            let bytes = b"44098c409eb5a2f2";
+            let mut compressed: *mut u8 = null_mut();
+            let mut compressed_size: usize = 0;
+            compress(&options, Format::DEFLATE, bytes.as_ptr(), bytes.len(), &mut compressed, &mut compressed_size);
+            assert_eq!(slice::from_raw_parts(compressed, compressed_size), [0x33, 0x31, 0x31, 0xb0, 0xb4, 0x48, 0x06, 0x12, 0xa9, 0x49, 0xa6, 0x89, 0x46, 0x69, 0x46, 0x00]);
+        }
+    }
 }

@@ -199,14 +199,14 @@ unsafe fn get_match(scan: *const u8, match_: *const u8, end: *const u8, safe_end
             && *(scan.offset(4)) == *(match_.offset(4)) && *(scan.offset(5)) == *(match_.offset(5))
             && *(scan.offset(6)) == *(match_.offset(6)) && *(scan.offset(7)) == *(match_.offset(7)) {
                 scan = scan.offset(8);
-                match_ = scan.offset(8);
+                match_ = match_.offset(8);
             }
     }
 
     // The remaining few bytes.
     while scan != end && *scan == *match_ {
         scan = scan.offset(1);
-        match_ = scan.offset(1);
+        match_ = match_.offset(1);
     }
 
     scan
