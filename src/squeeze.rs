@@ -412,7 +412,7 @@ unsafe fn get_statistics(store: *const LZ77Store, stats: *mut SymbolStats) {
  *     This is not the actual cost.
  */
 unsafe fn lz77_optimal_run(s: *const BlockState, in_: *const u8, instart: usize, inend: usize, path: *mut *mut u16, pathsize: *mut usize,
-                    length_array: *mut u16, costmodel: CostModelFun, costcontext: *const c_void, store: *mut LZ77Store) -> f64 {
+                           length_array: *mut u16, costmodel: CostModelFun, costcontext: *const c_void, store: *mut LZ77Store) -> f64 {
     let cost: f64 = get_best_lengths(s, in_, instart, inend, costmodel, costcontext, length_array);
     free(*path as *mut c_void);
     *path = null_mut();
