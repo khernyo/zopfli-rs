@@ -208,7 +208,9 @@ pub unsafe fn update_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash
     update_hash_same_hash(hpos, h);
 }
 
-pub unsafe fn warmup_hash(array: *const u8, pos: usize, _end: usize, h: *mut Hash) {
+pub unsafe fn warmup_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash) {
     update_hash_value(h, *array.offset(pos as isize + 0));
-    update_hash_value(h, *array.offset(pos as isize + 1));
+    if pos + 1 < end {
+        update_hash_value(h, *array.offset(pos as isize + 1));
+    }
 }
