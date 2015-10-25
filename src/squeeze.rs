@@ -267,6 +267,7 @@ unsafe fn get_best_lengths(s: *const BlockState, in_: *const u8, instart: usize,
             // Calling the cost model is expensive, avoid this if we are already at
             // the minimum possible cost that it can return.
             if *costs.offset((j + k) as isize) as f64 - *costs.offset(j as isize) as f64 <= mincost {
+                k += 1;
                 continue;
             }
 
