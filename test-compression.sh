@@ -22,8 +22,8 @@ function compare_compression() {
     for format in deflate zlib gzip; do
         F1=$TMP_DIR/`basename $i`.zopfli.$format
         F2=$TMP_DIR/`basename $i`.zopfli-rs.$format
-        $ZOPFLI -c $i >$F1
-        $ZOPFLI_RS -c $i >$F2
+        $ZOPFLI --$format -c $i >$F1
+        $ZOPFLI_RS --$format -c $i >$F2
         cmp $F1 $F2 || { echo "$format differs for file $FILE (find outputs in $TMP_DIR)"; exit 1; }
         rm $F1 $F2
     done
