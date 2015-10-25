@@ -88,7 +88,7 @@ unsafe fn patch_distance_codes_for_buggy_decoders(d_lengths: *mut u32) {
         }
     }
 
-    if num_dist_codes == 2 {
+    if num_dist_codes == 0 {
         *d_lengths.offset(0) = 1;
         *d_lengths.offset(1) = 1;
     } else if num_dist_codes == 1 {

@@ -2,7 +2,7 @@
 
 set -e
 
-MAX_SIZE=20c
+MAX_SIZE=50c
 BASE_PATH=.
 
 [ -z $1 -o -z $2 ] && { echo "Usage: $0 <path-to-zopfli> <path-to-zopfli-rs>"; exit 1; }
