@@ -156,13 +156,13 @@ fn get_length_score(length: i32, distance: i32) -> i32 {
 }
 
 /// Verifies if length and dist are indeed valid, only used for assertion.
-pub unsafe fn verify_len_dist(data: *const u8, datasize: usize, pos: usize, dist: u16, length: u16) {
+pub unsafe fn verify_len_dist(data: &[u8], datasize: usize, pos: usize, dist: u16, length: u16) {
     /* TODO(lode): make this only run in a debug compile, it's for assert only. */
 
     assert!(pos + length as usize <= datasize);
     for i in 0..length {
-        if *data.offset(pos as isize - dist as isize + i as isize) != *data.offset(pos as isize + i as isize) {
-            assert_eq!(*data.offset(pos as isize - dist as isize + i as isize), *data.offset(pos as isize + i as isize));
+        if data[pos - dist as usize + i as usize] != data[pos + i as usize] {
+            assert_eq!(data[pos - dist as usize + i as usize], data[pos + i as usize]);
             break;
         }
     }
@@ -297,7 +297,7 @@ unsafe fn store_in_longest_match_cache(s: *const BlockState, pos: usize, limit: 
  *     are used, the first 3 are ignored (the shortest length is 3. It is purely
  *     for convenience that the array is made 3 longer).
  */
-pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *const u8, pos: usize, size: usize, limit: usize, sublen: *mut u16, distance: *mut u16, length: *mut u16) {
+pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: &[u8], pos: usize, size: usize, limit: usize, sublen: *mut u16, distance: *mut u16, length: *mut u16) {
     let mut limit = limit;
 
     let hpos: u16 = (pos & WINDOW_MASK) as u16;
@@ -334,7 +334,7 @@ pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *c
     if pos + limit > size {
         limit = size - pos;
     }
-    let arrayend: *const u8 = array.offset(pos as isize).offset(limit as isize);
+    let arrayend: *const u8 = (&array[pos] as *const _).offset(limit as isize);
     let arrayend_safe: *const u8 = arrayend.offset(-8);
 
     assert!(hval < 65536);
@@ -359,8 +359,8 @@ pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *c
         if dist > 0 {
             assert!(pos < size);
             assert!(dist as usize <= pos);
-            let mut scan: *const u8 = array.offset(pos as isize);
-            let mut match_: *const u8 = array.offset((pos - dist as usize) as isize);
+            let mut scan: *const u8 = &array[pos];
+            let mut match_: *const u8 = &array[pos - dist as usize];
 
             // Testing the byte at position bestlength first, goes slightly faster.
             if pos + bestlength as usize >= size || *scan.offset(bestlength as isize) == *match_.offset(bestlength as isize) {
@@ -384,7 +384,7 @@ pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *c
 
                 scan = get_match(scan, match_, arrayend, arrayend_safe);
                 // The found length.
-                currentlength = (scan as usize - array.offset(pos as isize) as usize) as u16;
+                currentlength = (scan as usize - &array[pos] as *const _ as usize) as u16;
             }
 
             if currentlength > bestlength {
@@ -450,7 +450,7 @@ pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: *c
 /// The result is placed in the ZopfliLZ77Store.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, inend: usize, store: *mut LZ77Store) {
+pub unsafe fn lz77_greedy(s: *const BlockState, in_: &[u8], instart: usize, inend: usize, store: *mut LZ77Store) {
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
     let mut dummysublen_array: [u16; 259] = uninitialized();
     let dummysublen = dummysublen_array.as_mut_ptr();
@@ -487,7 +487,7 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
             if match_available {
                 match_available = false;
                 if lengthscore > prevlengthscore + 1 {
-                    store_litlen_dist(*in_.offset(i as isize - 1) as u16, 0, store);
+                    store_litlen_dist(in_[i - 1] as u16, 0, store);
                     if lengthscore as usize >= MIN_MATCH && (leng as usize) < MAX_MATCH {
                         match_available = true;
                         prev_length = leng as u32;
@@ -526,7 +526,7 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
             store_litlen_dist(leng, dist, store);
         } else {
             leng = 1;
-            store_litlen_dist(*in_.offset(i as isize) as u16, 0, store);
+            store_litlen_dist(in_[i] as u16, 0, store);
         }
         for _ in 1..leng {
             assert!(i < inend);

@@ -271,7 +271,7 @@ pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dis
  * npoints: pointer to amount of splitpoints, for the dynamic array. The amount of
  *   blocks is the amount of splitpoitns + 1.
  */
-pub unsafe fn block_split(options: *const Options, in_: *const u8, instart: usize, inend: usize, maxblocks: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
+pub unsafe fn block_split(options: *const Options, in_: &[u8], instart: usize, inend: usize, maxblocks: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
     let s = BlockState::new(options, instart, inend, null_mut());
     let mut lz77splitpoints: *mut usize = null_mut();
     let mut nlz77points: usize = 0;
@@ -308,7 +308,7 @@ pub unsafe fn block_split(options: *const Options, in_: *const u8, instart: usiz
 
 /// Divides the input into equal blocks, does not even take LZ77 lengths into
 /// account.
-pub unsafe fn block_split_simple(_in: *const u8, instart: usize, inend: usize, blocksize: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
+pub unsafe fn block_split_simple(_in: &[u8], instart: usize, inend: usize, blocksize: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
     let mut i: usize = instart;
     while i < inend {
         append_data!(i, *splitpoints, *npoints);

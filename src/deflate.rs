@@ -502,7 +502,7 @@ pub unsafe fn calculate_block_size(litlens: *const u16, dists: *const u16, lstar
  * outsize: dynamic output array size
  */
 unsafe fn add_lz77_block(options: *const Options, btype: i32, is_final: bool, litlens: *const u16, dists: *const u16, lstart: usize, lend: usize,
-                  expected_data_size: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+                         expected_data_size: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
     let mut ll_lengths: [u32; 288] = uninitialized();
     let mut d_lengths: [u32; 32] = uninitialized();
     let mut ll_symbols: [u32; 288] = uninitialized();
@@ -547,7 +547,7 @@ unsafe fn add_lz77_block(options: *const Options, btype: i32, is_final: bool, li
     }
 }
 
-unsafe fn deflate_dynamic_block(options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+unsafe fn deflate_dynamic_block(options: *const Options, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
     let blocksize: usize = inend - instart;
 
     #[cfg(feature = "longest-match-cache")]
@@ -595,7 +595,7 @@ unsafe fn deflate_dynamic_block(options: *const Options, is_final: bool, in_: *c
     clean_lz77_store(&mut store);
 }
 
-unsafe fn deflate_fixed_block(options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+unsafe fn deflate_fixed_block(options: *const Options, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
     let blocksize: usize = inend - instart;
 
     #[cfg(feature = "longest-match-cache")]
@@ -626,7 +626,7 @@ unsafe fn deflate_fixed_block(options: *const Options, is_final: bool, in_: *con
     clean_lz77_store(&mut store);
 }
 
-unsafe fn deflate_non_compressed_block(_options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+unsafe fn deflate_non_compressed_block(_options: *const Options, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
     let blocksize: usize = inend - instart;
     let nlen: u16 = !blocksize as u16;
 
@@ -645,11 +645,11 @@ unsafe fn deflate_non_compressed_block(_options: *const Options, is_final: bool,
     append_data!(((nlen / 256) % 256) as u8, *out, *outsize);
 
     for i in instart..inend {
-        append_data!(*in_.offset(i as isize), *out, *outsize);
+        append_data!(in_[i], *out, *outsize);
     }
 }
 
-unsafe fn deflate_block(options: *const Options, btype: i32, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+unsafe fn deflate_block(options: *const Options, btype: i32, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
     if btype == 0 {
         deflate_non_compressed_block(options, is_final, in_, instart, inend, bp, out, outsize);
     } else if btype == 1 {
@@ -662,7 +662,7 @@ unsafe fn deflate_block(options: *const Options, btype: i32, is_final: bool, in_
 /// Does squeeze strategy where first block splitting is done, then each block is
 /// squeezed.
 /// Parameters: see description of the ZopfliDeflate function.
-unsafe fn deflate_splitting_first(options: *const Options, btype: i32, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+unsafe fn deflate_splitting_first(options: *const Options, btype: i32, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
     let mut splitpoints: *mut usize = null_mut();
     let mut npoints: usize = 0;
     if btype == 0 {
@@ -686,7 +686,7 @@ unsafe fn deflate_splitting_first(options: *const Options, btype: i32, is_final:
 /// Does squeeze strategy where first the best possible lz77 is done, and then based
 /// on that data, block splitting is done.
 /// Parameters: see description of the ZopfliDeflate function.
-unsafe fn deflate_splitting_last(options: *const Options, btype: i32, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+unsafe fn deflate_splitting_last(options: *const Options, btype: i32, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
     #[cfg(feature = "longest-match-cache")]
     unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
         BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
@@ -753,7 +753,7 @@ unsafe fn deflate_splitting_last(options: *const Options, btype: i32, is_final: 
  * This function will usually output multiple deflate blocks. If final is 1, then
  * the final bit will be set on the last block.
 */
-unsafe fn deflate_part(options: *const Options, btype: i32, is_final: bool, input: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+unsafe fn deflate_part(options: *const Options, btype: i32, is_final: bool, input: &[u8], instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
     if (*options).blocksplitting {
         if (*options).blocksplittinglast {
             deflate_splitting_last(options, btype, is_final, input, instart, inend, bp, out, outsize);
@@ -793,14 +793,14 @@ pub unsafe fn deflate(options: *const Options, btype: i32, is_final: bool, input
 
     let insize = input.len();
     if util::MASTER_BLOCK_SIZE == 0 {
-        deflate_part(options, btype, is_final, input.as_ptr(), 0, insize, bp, out, outsize);
+        deflate_part(options, btype, is_final, input, 0, insize, bp, out, outsize);
     } else {
         let mut i: usize = 0;
         while i < insize {
             let masterfinal: bool = i + util::MASTER_BLOCK_SIZE >= insize;
             let final2: bool = is_final && masterfinal;
             let size: usize = if masterfinal { insize - i } else { util::MASTER_BLOCK_SIZE };
-            deflate_part(options, btype, final2, input.as_ptr(), i, i + size, bp, out, outsize);
+            deflate_part(options, btype, final2, input, i, i + size, bp, out, outsize);
             i += size;
         }
     }

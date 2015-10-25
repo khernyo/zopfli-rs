@@ -164,15 +164,15 @@ unsafe fn update_hash_value(h: *mut Hash, c: u8) {
 }
 
 #[cfg(not(feature = "hash-same"))]
-fn update_hash_same(_array: *const u8, _pos: usize, _end: usize, _hpos: u16, _h: *mut Hash) { }
+fn update_hash_same(_array: &[u8], _pos: usize, _end: usize, _hpos: u16, _h: *mut Hash) { }
 
 #[cfg(feature = "hash-same")]
-unsafe fn update_hash_same(array: *const u8, pos: usize, end: usize, hpos: u16, h: *mut Hash) {
+unsafe fn update_hash_same(array: &[u8], pos: usize, end: usize, hpos: u16, h: *mut Hash) {
     let mut amount: usize = 0;
     if *(*h).hash_same.same.offset((pos as isize - 1) & WINDOW_MASK as isize) > 1 {
         amount = (*(*h).hash_same.same.offset(((pos - 1) & WINDOW_MASK) as isize) - 1) as usize;
     }
-    while pos + amount + 1 < end && *array.offset(pos as isize) == *array.offset((pos + amount + 1) as isize) && amount < !0u16 as usize {
+    while pos + amount + 1 < end && array[pos] == array[(pos + amount + 1)] && amount < !0u16 as usize {
         amount += 1;
     }
     *(*h).hash_same.same.offset(hpos as isize) = amount as u16;
@@ -193,9 +193,9 @@ unsafe fn update_hash_same_hash(hpos: u16, h: *mut Hash) {
     *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) = hpos as i32;
 }
 
-pub unsafe fn update_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash) {
+pub unsafe fn update_hash(array: &[u8], pos: usize, end: usize, h: *mut Hash) {
     let hpos: u16 = pos as u16 & WINDOW_MASK as u16;
-    update_hash_value(h, if pos + MIN_MATCH <= end { *array.offset(pos as isize + MIN_MATCH as isize - 1) } else { 0 });
+    update_hash_value(h, if pos + MIN_MATCH <= end { array[pos + MIN_MATCH - 1] } else { 0 });
     *(*h).hashval.offset(hpos as isize) = (*h).val;
     if *(*h).head.offset((*h).val as isize) != -1 && *(*h).hashval.offset(*(*h).head.offset((*h).val as isize) as isize) == (*h).val {
         *(*h).prev.offset(hpos as isize) = *(*h).head.offset((*h).val as isize) as u16;
@@ -208,9 +208,9 @@ pub unsafe fn update_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash
     update_hash_same_hash(hpos, h);
 }
 
-pub unsafe fn warmup_hash(array: *const u8, pos: usize, end: usize, h: *mut Hash) {
-    update_hash_value(h, *array.offset(pos as isize + 0));
+pub unsafe fn warmup_hash(array: &[u8], pos: usize, end: usize, h: *mut Hash) {
+    update_hash_value(h, array[pos + 0]);
     if pos + 1 < end {
-        update_hash_value(h, *array.offset(pos as isize + 1));
+        update_hash_value(h, array[pos + 1]);
     }
 }
