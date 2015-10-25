@@ -788,18 +788,19 @@ unsafe fn deflate_part(options: *const Options, btype: i32, is_final: bool, inpu
  *   be freed after use.
  * outsize: pointer to the dynamic output array size.
  */
-pub unsafe fn deflate(options: *const Options, btype: i32, is_final: bool, input: *const u8, insize: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+pub unsafe fn deflate(options: *const Options, btype: i32, is_final: bool, input: &[u8], bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
     let offset: usize = *outsize;
 
+    let insize = input.len();
     if util::MASTER_BLOCK_SIZE == 0 {
-        deflate_part(options, btype, is_final, input, 0, insize, bp, out, outsize);
+        deflate_part(options, btype, is_final, input.as_ptr(), 0, insize, bp, out, outsize);
     } else {
         let mut i: usize = 0;
         while i < insize {
             let masterfinal: bool = i + util::MASTER_BLOCK_SIZE >= insize;
             let final2: bool = is_final && masterfinal;
             let size: usize = if masterfinal { insize - i } else { util::MASTER_BLOCK_SIZE };
-            deflate_part(options, btype, final2, input, i, i + size, bp, out, outsize);
+            deflate_part(options, btype, final2, input.as_ptr(), i, i + size, bp, out, outsize);
             i += size;
         }
     }

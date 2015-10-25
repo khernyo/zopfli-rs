@@ -5,12 +5,11 @@ extern crate libc;
 use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::ptr;
 use std::ptr::null_mut;
 use std::slice;
 
-use libc::{c_void, size_t};
-use libc::funcs::c95::stdlib::{free, malloc};
+use libc::c_void;
+use libc::funcs::c95::stdlib::free;
 
 use zopfli::*;
 
@@ -71,7 +70,7 @@ Usage: zopfli [OPTION]... FILE...
                     Some(ref f) if options.verbose => println_err!("Saving to: {}", f),
                     _ => (),
                 }
-                compress_file(&mut options, output_type, &filename, outfilename);
+                compress_file(&options, output_type, &filename, outfilename);
             }
         }
 
@@ -83,16 +82,14 @@ Usage: zopfli [OPTION]... FILE...
 }
 
 /// outfilename: filename to write output to, or 0 to write to stdout instead
-unsafe fn compress_file(options: *const Options, output_type: Format, infilename: &str, outfilename: Option<String>) {
-    let mut input: *mut u8 = null_mut();
-    let mut insize: usize = 0;
-    load_file(infilename, &mut input, &mut insize);
-    if insize == 0 {
+unsafe fn compress_file(options: &Options, output_type: Format, infilename: &str, outfilename: Option<String>) {
+    let input = load_file(infilename);
+    if input.len() == 0 {
         println_err!("Invalid filename: {}", infilename);
     } else {
         let mut output: *mut u8 = null_mut();
         let mut outsize: usize = 0;
-        compress(options, output_type, input, insize, &mut output, &mut outsize);
+        compress(options, output_type, &input, &mut output, &mut outsize);
 
         if let Some(f) = outfilename {
             save_file(&f, output, outsize);
@@ -100,21 +97,19 @@ unsafe fn compress_file(options: *const Options, output_type: Format, infilename
             std::io::stdout().write(slice::from_raw_parts(output, outsize)).unwrap();
         }
         free(output as *mut c_void);
-        free(input as *mut c_void);
     }
 }
 
-unsafe fn load_file(filename: &str, buf: *mut *mut u8, size: *mut usize) {
+fn load_file(filename: &str) -> Vec<u8> {
     let mut f = File::open(filename).unwrap();
-    *size = f.metadata().unwrap().len() as usize;
-    if *size > 2147483647 {
+    let size = f.metadata().unwrap().len();
+    if size > 2147483647 {
         println_err!("Files larger than 2GB are not supported.");
         std::process::exit(1);
     }
     let mut b = Vec::new();
-    assert_eq!(f.read_to_end(&mut b).unwrap(), *size);
-    *buf = malloc(*size as size_t) as *mut u8;
-    ptr::copy_nonoverlapping(b.as_ptr(), *buf, *size);
+    assert_eq!(f.read_to_end(&mut b).unwrap(), size as usize);
+    b
 }
 
 unsafe fn save_file(filename: &str, buf: *mut u8, size: usize) {

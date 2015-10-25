@@ -73,13 +73,13 @@ pub enum Format {
  *   be freed after use
  * outsize: pointer to the dynamic output array size
  */
-pub unsafe fn compress(options: *const Options, output_type: Format, input: *const u8, insize: usize, out: *mut *mut u8, outsize: *mut usize) {
+pub unsafe fn compress(options: *const Options, output_type: Format, input: &[u8], out: *mut *mut u8, outsize: *mut usize) {
     match output_type {
-        Format::GZIP    => gzip_container::compress(options, input, insize, out, outsize),
-        Format::ZLIB    => zlib_container::compress(options, input, insize, out, outsize),
+        Format::GZIP    => gzip_container::compress(options, input, out, outsize),
+        Format::ZLIB    => zlib_container::compress(options, input, out, outsize),
         Format::DEFLATE => {
             let mut bp: u8 = 0;
-            deflate::deflate(options, 2 /* Dynamic block */, true, input, insize, &mut bp, out, outsize)
+            deflate::deflate(options, 2 /* Dynamic block */, true, input, &mut bp, out, outsize)
         },
     }
 }
@@ -102,7 +102,7 @@ mod test {
         let options = Options { verbose: false, verbose_more: false, .. Options::new() };
         let mut compressed: *mut u8 = null_mut();
         let mut compressed_size: usize = 0;
-        compress(&options, format, bytes.as_ptr(), bytes.len(), &mut compressed, &mut compressed_size);
+        compress(&options, format, bytes, &mut compressed, &mut compressed_size);
         let decompressed = match format {
             Format::GZIP => {
                 let mut d = GzDecoder::new(slice::from_raw_parts(compressed, compressed_size)).unwrap();
@@ -151,7 +151,7 @@ mod test {
             let options = Options { verbose: false, verbose_more: false, .. Options::new() };
             let mut result: *mut u8 = null_mut();
             let mut result_size: usize = 0;
-            compress(&options, format, data.as_ptr(), data.len(), &mut result, &mut result_size);
+            compress(&options, format, data, &mut result, &mut result_size);
             assert_eq!(slice::from_raw_parts(result, result_size), compressed);
         }
     }

@@ -30,21 +30,21 @@ unsafe fn make_crc_table() {
 
 /// Updates a running crc with the bytes buf[0..len-1] and returns
 /// the updated crc. The crc should be initialized to zero.
-unsafe fn update_crc(crc: u64, buf: *const u8, len: usize) -> u64 {
+unsafe fn update_crc(crc: u64, buf: &[u8]) -> u64 {
     let mut c: u64 = crc ^ 0xffffffffu64;
 
     if !crc_table_computed {
         make_crc_table();
     }
-    for n in 0..len {
-        c = crc_table[((c ^ *buf.offset(n as isize) as u64) & 0xff) as usize] ^ (c >> 8);
+    for v in buf {
+        c = crc_table[((c ^ *v as u64) & 0xff) as usize] ^ (c >> 8);
     }
     c ^ 0xffffffffu64
 }
 
 /// Returns the CRC of the bytes buf[0..len-1].
-unsafe fn crc(buf: *const u8, len: i32) -> u64 {
-    update_crc(0u64, buf, len as usize)
+unsafe fn crc(buf: &[u8]) -> u64 {
+    update_crc(0u64, buf)
 }
 
 /**
@@ -56,8 +56,8 @@ unsafe fn crc(buf: *const u8, len: i32) -> u64 {
  *   be freed after use.
  * outsize: pointer to the dynamic output array size.
  */
-pub unsafe fn compress(options: *const Options, input: *const u8, insize: usize, out: *mut *mut u8, outsize: *mut usize) {
-    let crcvalue: u64 = crc(input, insize as i32);
+pub unsafe fn compress(options: *const Options, input: &[u8], out: *mut *mut u8, outsize: *mut usize) {
+    let crcvalue: u64 = crc(input);
     let mut bp: u8 = 0;
 
     append_data!(31, *out, *outsize); // ID1
@@ -73,7 +73,7 @@ pub unsafe fn compress(options: *const Options, input: *const u8, insize: usize,
     append_data!(2, *out, *outsize); // XFL, 2 indicates best compression.
     append_data!(3, *out, *outsize); // OS follows Unix conventions.
 
-    deflate(options, 2 /* Dynamic block */, true, input, insize, &mut bp, out, outsize);
+    deflate(options, 2 /* Dynamic block */, true, input, &mut bp, out, outsize);
 
     // CRC
     append_data!((crcvalue % 256) as u8, *out, *outsize);
@@ -82,6 +82,7 @@ pub unsafe fn compress(options: *const Options, input: *const u8, insize: usize,
     append_data!(((crcvalue >> 24) % 256) as u8, *out, *outsize);
 
     // ISIZE
+    let insize = input.len();
     append_data!((insize % 256) as u8, *out, *outsize);
     append_data!(((insize >> 8) % 256) as u8, *out, *outsize);
     append_data!(((insize >> 16) % 256) as u8, *out, *outsize);

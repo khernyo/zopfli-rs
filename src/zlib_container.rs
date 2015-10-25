@@ -7,17 +7,19 @@ use super::Options;
 use deflate::deflate;
 
 /// Calculates the adler32 checksum of the data
-unsafe fn adler32(mut data: *const u8, mut size: usize) -> u32 {
+fn adler32(data: &[u8]) -> u32 {
     const SUMS_OVERFLOW: u32 = 5550;
     let mut s1: u32 = 1;
     let mut s2: u32 = 1 >> 16;
 
+    let mut i = 0;
+    let mut size = data.len();
     while size > 0 {
         let mut amount: usize = if size > SUMS_OVERFLOW as usize { SUMS_OVERFLOW as usize } else { size };
         size -= amount;
         while amount > 0 {
-            s1 += *data as u32;
-            data = data.offset(1);
+            s1 += data[i] as u32;
+            i += 1;
             s2 += s1;
             amount -= 1;
         }
@@ -37,9 +39,9 @@ unsafe fn adler32(mut data: *const u8, mut size: usize) -> u32 {
  *   be freed after use.
  * outsize: pointer to the dynamic output array size.
  */
-pub unsafe fn compress(options: *const Options, input: *const u8, insize: usize, out: *mut *mut u8, outsize: *mut usize) {
+pub unsafe fn compress(options: *const Options, input: &[u8], out: *mut *mut u8, outsize: *mut usize) {
     let mut bitpointer: u8 = 0;
-    let checksum: u32 = adler32(input, insize as u32 as usize);
+    let checksum: u32 = adler32(input);
     let cmf: u32 = 120; // CM 8, CINFO 7. See zlib spec.
     let flevel: u32 = 0;
     let fdict: u32 = 0;
@@ -50,7 +52,7 @@ pub unsafe fn compress(options: *const Options, input: *const u8, insize: usize,
     append_data!((cmfflg / 256) as u8, *out, *outsize);
     append_data!((cmfflg % 256) as u8, *out, *outsize);
 
-    deflate(options, 2 /* dynamic block */, true /* final */, input, insize, &mut bitpointer, out, outsize);
+    deflate(options, 2 /* dynamic block */, true /* final */, input, &mut bitpointer, out, outsize);
 
     append_data!(((checksum >> 24) % 256) as u8, *out, *outsize);
     append_data!(((checksum >> 16) % 256) as u8, *out, *outsize);
@@ -58,6 +60,7 @@ pub unsafe fn compress(options: *const Options, input: *const u8, insize: usize,
     append_data!((checksum % 256) as u8, *out, *outsize);
 
     if (*options).verbose {
+        let insize = input.len();
         println_err!("Original Size: {}, Zlib: {}, Compression: {}% Removed", insize, *outsize, 100.0 * (insize as isize - *outsize as isize) as f64 / insize as f64);
     }
 }
