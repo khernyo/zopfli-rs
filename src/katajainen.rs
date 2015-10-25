@@ -107,7 +107,7 @@ unsafe fn boundary_pm(lists: *mut [*mut Node; 2], maxbits: i32, leaves: *const N
         //New leaf node in list 0.
         init_node((*leaves.offset(lastcount as isize)).weight, lastcount + 1, null_mut(), newchain);
     } else {
-        let sum = (*(*lists.offset((index - 1) as isize))[0]).weight + (*(*lists.offset((index - 1) as isize))[0]).weight;
+        let sum = (*(*lists.offset((index - 1) as isize))[0]).weight + (*(*lists.offset((index - 1) as isize))[1]).weight;
         if lastcount < numsymbols && sum > (*leaves.offset(lastcount as isize)).weight {
             // New leaf inserted in list, so count is incremented.
             init_node((*leaves.offset(lastcount as isize)).weight, lastcount + 1, (*oldchain).tail, newchain);
@@ -165,7 +165,7 @@ extern {
 
 pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, maxbits: i32, bitlengths: *mut u32) -> bool {
     // Amount of symbols with frequency > 0.
-    let mut numsymbols = 0;
+    let mut numsymbols: i32 = 0;
 
     // One leaf per symbol. Only numsymbols leaves will be used.
     let leaves: *mut Node = malloc((n as usize * mem::size_of::<Node>()) as size_t) as *mut Node;
@@ -178,8 +178,8 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, max
     // Count used symbols and place them in the leaves.
     for i in 0..n {
         if *frequencies.offset(i as isize) != 0 {
-            (*leaves.offset(numsymbols)).weight = *frequencies.offset(i as isize);
-            (*leaves.offset(numsymbols)).count = i; // Index of symbol this leaf represents.
+            (*leaves.offset(numsymbols as isize)).weight = *frequencies.offset(i as isize);
+            (*leaves.offset(numsymbols as isize)).count = i; // Index of symbol this leaf represents.
             numsymbols += 1;
         }
     }
@@ -229,7 +229,7 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, max
     free(lists as *mut c_void);
     free(leaves as *mut c_void);
     free(pool.nodes as *mut c_void);
-    false
+    false // OK.
 }
 
 #[cfg(test)]

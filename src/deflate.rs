@@ -397,10 +397,10 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
     }
 
     // 3) Let's replace those population counts that lead to more rle codes.
-    let mut stride: i32 = 0;
+    stride = 0;
     let mut limit: usize = *counts.offset(0);
     let mut sum: usize = 0;
-    for i in 0..length {
+    for i in 0..length+1 {
         if i == length || *good_for_rle.offset(i as isize)
             // Heuristic for selecting the stride ranges to collapse.
             || abs_diff(*counts.offset(i as isize), limit) >= 4 {
