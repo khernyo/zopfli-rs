@@ -297,13 +297,13 @@ unsafe fn get_best_lengths(s: *const BlockState, in_: &[u8], instart: usize, ine
 /// length_array. The length_array must contain the optimal length to reach that
 /// byte. The path will be filled with the lengths to use, so its data size will be
 /// the amount of lz77 symbols.
-unsafe fn trace_backwards(size: usize, length_array: *const u16, path: *mut *mut u16, pathsize: *mut usize) {
+unsafe fn trace_backwards(size: usize, length_array: *const u16, path: &mut Vec<u16>) {
     let mut index: usize = size;
     if size == 0 {
         return;
     }
     loop {
-        append_data!(*length_array.offset(index as isize), *path, *pathsize);
+        path.push(*length_array.offset(index as isize));
         assert!(*length_array.offset(index as isize) as usize <= index);
         assert!(*length_array.offset(index as isize) as usize <= MAX_MATCH);
         assert!(*length_array.offset(index as isize) != 0);
@@ -313,17 +313,10 @@ unsafe fn trace_backwards(size: usize, length_array: *const u16, path: *mut *mut
         }
     }
 
-    // Mirror result.
-    index = 0;
-    while index < *pathsize / 2 {
-        let temp: u16 = *(*path).offset(index as isize);
-        *(*path).offset(index as isize) = *(*path).offset((*pathsize - index - 1) as isize);
-        *(*path).offset((*pathsize - index - 1) as isize) = temp;
-        index += 1;
-    }
+    path.reverse();
 }
 
-unsafe fn follow_path(s: *const BlockState, in_: &[u8], instart: usize, inend: usize, path: *const u16, pathsize: usize, store: *mut LZ77Store) {
+unsafe fn follow_path(s: *const BlockState, in_: &[u8], instart: usize, inend: usize, path: &Vec<u16>, store: *mut LZ77Store) {
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
 
     let mut _total_length_test: usize = 0;
@@ -340,8 +333,8 @@ unsafe fn follow_path(s: *const BlockState, in_: &[u8], instart: usize, inend: u
     }
 
     let mut pos: usize = instart;
-    for i in 0..pathsize {
-        let mut length: u16 = *path.offset(i as isize);
+    for i in 0..path.len() {
+        let mut length: u16 = path[i];
         let mut dummy_length: u16 = uninitialized();
         let mut dist: u16 = uninitialized();
         assert!(pos < inend);
@@ -412,14 +405,12 @@ unsafe fn get_statistics(store: *const LZ77Store, stats: *mut SymbolStats) {
  * returns the cost that was, according to the costmodel, needed to get to the end.
  *     This is not the actual cost.
  */
-unsafe fn lz77_optimal_run(s: *const BlockState, in_: &[u8], instart: usize, inend: usize, path: *mut *mut u16, pathsize: *mut usize,
+unsafe fn lz77_optimal_run(s: *const BlockState, in_: &[u8], instart: usize, inend: usize, path: &mut Vec<u16>,
                            length_array: *mut u16, costmodel: CostModelFun, costcontext: *const c_void, store: *mut LZ77Store) -> f64 {
     let cost: f64 = get_best_lengths(s, in_, instart, inend, costmodel, costcontext, length_array);
-    free(*path as *mut c_void);
-    *path = null_mut();
-    *pathsize = 0;
-    trace_backwards(inend - instart, length_array, path, pathsize);
-    follow_path(s, in_, instart, inend, *path, *pathsize, store);
+    path.clear();
+    trace_backwards(inend - instart, length_array, path);
+    follow_path(s, in_, instart, inend, path, store);
     assert!(cost < LARGE_FLOAT);
     cost
 }
@@ -433,8 +424,7 @@ pub unsafe fn lz77_optimal(s: *const BlockState, in_: &[u8], instart: usize, ine
     // Dist to get to here with smallest cost.
     let blocksize: usize = inend - instart;
     let length_array: *mut u16 = malloc(size_of::<u16>() as size_t * (blocksize as size_t + 1)) as *mut u16;
-    let mut path: *mut u16 = null_mut();
-    let mut pathsize: usize = 0;
+    let mut path: Vec<u16> = Vec::new();
     let mut currentstore = LZ77Store::new();
     let mut stats = SymbolStats::new();
     let mut beststats: SymbolStats = uninitialized();
@@ -462,7 +452,7 @@ pub unsafe fn lz77_optimal(s: *const BlockState, in_: &[u8], instart: usize, ine
     for i in 0..(*(*s).options).numiterations {
         LZ77Store::clean(&mut currentstore);
         LZ77Store::init(&mut currentstore);
-        lz77_optimal_run(s, in_, instart, inend, &mut path, &mut pathsize, length_array, get_cost_stat, &stats as *const _ as *const c_void, &mut currentstore);
+        lz77_optimal_run(s, in_, instart, inend, &mut path, length_array, get_cost_stat, &stats as *const _ as *const c_void, &mut currentstore);
         cost = calculate_block_size(currentstore.litlens, currentstore.dists, 0, currentstore.size, 2);
         if (*(*s).options).verbose_more || ((*(*s).options).verbose && cost < bestcost) {
             println_err!("Iteration {}: {} bit", i, cost as i32);
@@ -493,7 +483,6 @@ pub unsafe fn lz77_optimal(s: *const BlockState, in_: &[u8], instart: usize, ine
     }
 
     free(length_array as *mut c_void);
-    free(path as *mut c_void);
     clean_lz77_store(&mut currentstore);
 }
 
@@ -509,8 +498,7 @@ pub unsafe fn lz77_optimal_fixed(s: *mut BlockState, in_: &[u8], instart: usize,
     // Dist to get to here with smallest cost.
     let blocksize: usize = inend - instart;
     let length_array: *mut u16 = malloc(size_of::<u16>() as size_t * (blocksize as size_t + 1)) as *mut u16;
-    let mut path: *mut u16 = null_mut();
-    let mut pathsize: usize = 0;
+    let mut path: Vec<u16> = Vec::new();
 
     if length_array.is_null() {
         panic!("Allocation failed");
@@ -521,8 +509,7 @@ pub unsafe fn lz77_optimal_fixed(s: *mut BlockState, in_: &[u8], instart: usize,
 
     // Shortest path for fixed tree This one should give the shortest possible
     // result for fixed tree, no repeated runs are needed since the tree is known.
-    lz77_optimal_run(s, in_, instart, inend, &mut path, &mut pathsize, length_array, get_cost_fixed, null_mut(), store);
+    lz77_optimal_run(s, in_, instart, inend, &mut path, length_array, get_cost_fixed, null_mut(), store);
 
     free(length_array as *mut c_void);
-    free(path as *mut c_void);
 }

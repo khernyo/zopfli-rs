@@ -110,17 +110,17 @@ unsafe fn split_cost(i: usize, context: *const c_void) -> f64 {
     estimate_cost((*c).litlens, (*c).dists, (*c).start, i) + estimate_cost((*c).litlens, (*c).dists, i, (*c).end)
 }
 
-unsafe fn add_sorted(value: usize, out: *mut *mut usize, outsize: *mut usize) {
-    append_data!(value, *out, *outsize);
+unsafe fn add_sorted(value: usize, out: &mut Vec<usize>) {
+    out.push(value);
     let mut i: usize = 0;
-    while i + 1 < *outsize {
-        if *(*out).offset(i as isize) > value {
-            let mut j: usize = *outsize - 1;
+    while i + 1 < out.len() {
+        if out[i] > value {
+            let mut j: usize = out.len() - 1;
             while j > i {
-                *(*out).offset(j as isize) = *(*out).offset(j as isize - 1);
+                out[j] = out[j - 1];
                 j -= 1;
             }
-            *(*out).offset(i as isize) = value;
+            out[i] = value;
             break;
         }
         i += 1;
@@ -128,38 +128,35 @@ unsafe fn add_sorted(value: usize, out: *mut *mut usize, outsize: *mut usize) {
 }
 
 /// Prints the block split points as decimal and hex values in the terminal.
-unsafe fn print_block_split_points(litlens: *const u16, dists: *const u16, llsize: usize, lz77splitpoints: *const usize, nlz77points: usize) {
-    let mut splitpoints: *mut usize = null_mut();
-    let mut npoints: usize = 0;
+unsafe fn print_block_split_points(litlens: *const u16, dists: *const u16, llsize: usize, lz77splitpoints: &Vec<usize>) {
+    let mut splitpoints: Vec<usize> = Vec::new();
 
     // The input is given as lz77 indices, but we want to see the uncompressed
     // index values.
     let mut pos: usize = 0;
-    if nlz77points > 0 {
+    if lz77splitpoints.len() > 0 {
         for i in 0..llsize {
             let length: usize = if *dists.offset(i as isize) == 0 { 1 } else { *litlens.offset(i as isize) as usize };
-            if *lz77splitpoints.offset(npoints as isize) == i {
-                append_data!(pos, splitpoints, npoints);
-                if npoints == nlz77points {
+            if lz77splitpoints[splitpoints.len()] == i {
+                splitpoints.push(pos);
+                if splitpoints.len() == lz77splitpoints.len() {
                     break;
                 }
             }
             pos += length;
         }
     }
-    assert_eq!(npoints, nlz77points);
+    assert_eq!(splitpoints.len(), lz77splitpoints.len());
 
     print_err!("block split points: ");
-    for i in 0..npoints {
-        print_err!("{} ", *splitpoints.offset(i as isize) as i32);
+    for i in 0..splitpoints.len() {
+        print_err!("{} ", splitpoints[i] as i32);
     }
     print_err!("(hex:");
-    for i in 0..npoints {
-        print_err!(" {:x}", *splitpoints.offset(i as isize) as i32);
+    for i in 0..splitpoints.len() {
+        print_err!(" {:x}", splitpoints[i] as i32);
     }
     println_err!(")");
-
-    free(splitpoints as *mut c_void);
 }
 
 /// Finds next block to try to split, the largest of the available ones.
@@ -173,12 +170,12 @@ unsafe fn print_block_split_points(litlens: *const u16, dists: *const u16, llsiz
 /// lstart: output variable, giving start of block.
 /// lend: output variable, giving end of block.
 /// returns 1 if a block was found, 0 if no block found (all are done).
-unsafe fn find_largest_splittable_block(llsize: usize, done: *const u8, splitpoints: *const usize, npoints: usize, lstart: *mut usize, lend: *mut usize) -> bool {
+unsafe fn find_largest_splittable_block(llsize: usize, done: *const u8, splitpoints: &Vec<usize>, lstart: *mut usize, lend: *mut usize) -> bool {
     let mut longest: usize = 0;
     let mut found = false;
-    for i in 0..npoints+1 {
-        let start: usize = if i == 0 { 0 } else { *splitpoints.offset(i as isize - 1) };
-        let end: usize = if i == npoints { llsize - 1 } else { *splitpoints.offset(i as isize) };
+    for i in 0..splitpoints.len()+1 {
+        let start: usize = if i == 0 { 0 } else { splitpoints[i - 1] };
+        let end: usize = if i == splitpoints.len() { llsize - 1 } else { splitpoints[i] };
         if *done.offset(start as isize) == 0 && end - start > longest {
             *lstart = start;
             *lend = end;
@@ -195,7 +192,7 @@ unsafe fn find_largest_splittable_block(llsize: usize, done: *const u8, splitpoi
 /// dists: lz77 distances
 /// llsize: size of litlens and dists
 /// maxblocks: set a limit to the amount of blocks. Set to 0 to mean no limit.
-pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dists: *const u16, llsize: usize, maxblocks: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
+pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dists: *const u16, llsize: usize, maxblocks: usize, splitpoints: &mut Vec<usize>) {
     if llsize < 10 {
         // This code fails on tiny files.
         return;
@@ -236,11 +233,11 @@ pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dis
         if splitcost > origcost || llpos == lstart + 1 || llpos == lend {
             *done.offset(lstart as isize) = 1;
         } else {
-            add_sorted(llpos, splitpoints, npoints);
+            add_sorted(llpos, splitpoints);
             numblocks += 1;
         }
 
-        if !find_largest_splittable_block(llsize, done, *splitpoints, *npoints, &mut lstart, &mut lend) {
+        if !find_largest_splittable_block(llsize, done, splitpoints, &mut lstart, &mut lend) {
             // No further split will probably reduce compression.
             break;
         }
@@ -251,7 +248,7 @@ pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dis
     }
 
     if (*options).verbose {
-        print_block_split_points(litlens, dists, llsize, *splitpoints, *npoints);
+        print_block_split_points(litlens, dists, llsize, splitpoints);
     }
 
     free(transmute(done));
@@ -271,47 +268,44 @@ pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dis
  * npoints: pointer to amount of splitpoints, for the dynamic array. The amount of
  *   blocks is the amount of splitpoitns + 1.
  */
-pub unsafe fn block_split(options: *const Options, in_: &[u8], instart: usize, inend: usize, maxblocks: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
+pub unsafe fn block_split(options: *const Options, in_: &[u8], instart: usize, inend: usize, maxblocks: usize, splitpoints: &mut Vec<usize>) {
     let s = BlockState::new(options, instart, inend, null_mut());
-    let mut lz77splitpoints: *mut usize = null_mut();
-    let mut nlz77points: usize = 0;
+    let mut lz77splitpoints: Vec<usize> = Vec::new();
     let mut store = LZ77Store::new();
 
-    *npoints = 0;
-    *splitpoints = null_mut();
+    splitpoints.clear();
 
     // Unintuitively, Using a simple LZ77 method here instead of ZopfliLZ77Optimal
     // results in better blocks.
     lz77_greedy(&s, in_, instart, inend, &mut store);
 
-    block_split_lz77(options, store.litlens, store.dists, store.size, maxblocks, &mut lz77splitpoints, &mut nlz77points);
+    block_split_lz77(options, store.litlens, store.dists, store.size, maxblocks, &mut lz77splitpoints);
 
     // Convert LZ77 positions to positions in the uncompressed input.
     let mut pos: usize = instart;
-    if nlz77points > 0 {
+    if lz77splitpoints.len() > 0 {
         for i in 0..store.size {
             let length: usize = if *store.dists.offset(i as isize) == 0 { 1 } else { *store.litlens.offset(i as isize) as usize };
-            if *lz77splitpoints.offset(*npoints as isize) == i {
-                append_data!(pos, *splitpoints, *npoints);
-                if *npoints == nlz77points {
+            if lz77splitpoints[splitpoints.len()] == i {
+                splitpoints.push(pos);
+                if splitpoints.len() == lz77splitpoints.len() {
                     break;
                 }
             }
             pos += length;
         }
     }
-    assert_eq!(*npoints, nlz77points);
+    assert_eq!(splitpoints.len(), lz77splitpoints.len());
 
-    free(lz77splitpoints as *mut c_void);
     clean_lz77_store(&mut store);
 }
 
 /// Divides the input into equal blocks, does not even take LZ77 lengths into
 /// account.
-pub unsafe fn block_split_simple(_in: &[u8], instart: usize, inend: usize, blocksize: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
+pub unsafe fn block_split_simple(_in: &[u8], instart: usize, inend: usize, blocksize: usize, splitpoints: &mut Vec<usize>) {
     let mut i: usize = instart;
     while i < inend {
-        append_data!(i, *splitpoints, *npoints);
+        splitpoints.push(i);
         i += blocksize;
     }
 }

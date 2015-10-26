@@ -39,7 +39,7 @@ fn adler32(data: &[u8]) -> u32 {
  *   be freed after use.
  * outsize: pointer to the dynamic output array size.
  */
-pub unsafe fn compress(options: *const Options, input: &[u8], out: *mut *mut u8, outsize: *mut usize) {
+pub unsafe fn compress(options: *const Options, input: &[u8]) -> Vec<u8> {
     let mut bitpointer: u8 = 0;
     let checksum: u32 = adler32(input);
     let cmf: u32 = 120; // CM 8, CINFO 7. See zlib spec.
@@ -49,18 +49,21 @@ pub unsafe fn compress(options: *const Options, input: &[u8], out: *mut *mut u8,
     let fcheck: u32 = 31 - cmfflg % 31;
     cmfflg += fcheck;
 
-    append_data!((cmfflg / 256) as u8, *out, *outsize);
-    append_data!((cmfflg % 256) as u8, *out, *outsize);
+    let mut out = Vec::new();
+    out.push((cmfflg / 256) as u8);
+    out.push((cmfflg % 256) as u8);
 
-    deflate(options, 2 /* dynamic block */, true /* final */, input, &mut bitpointer, out, outsize);
+    deflate(options, 2 /* dynamic block */, true /* final */, input, &mut bitpointer, &mut out);
 
-    append_data!(((checksum >> 24) % 256) as u8, *out, *outsize);
-    append_data!(((checksum >> 16) % 256) as u8, *out, *outsize);
-    append_data!(((checksum >> 8) % 256) as u8, *out, *outsize);
-    append_data!((checksum % 256) as u8, *out, *outsize);
+    out.push(((checksum >> 24) % 256) as u8);
+    out.push(((checksum >> 16) % 256) as u8);
+    out.push(((checksum >> 8) % 256) as u8);
+    out.push((checksum % 256) as u8);
 
     if (*options).verbose {
         let insize = input.len();
-        println_err!("Original Size: {}, Zlib: {}, Compression: {}% Removed", insize, *outsize, 100.0 * (insize as isize - *outsize as isize) as f64 / insize as f64);
+        let outsize = out.len();
+        println_err!("Original Size: {}, Zlib: {}, Compression: {}% Removed", insize, outsize, 100.0 * (insize as isize - outsize as isize) as f64 / insize as f64);
     }
+    out
 }

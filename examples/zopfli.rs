@@ -5,11 +5,6 @@ extern crate libc;
 use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::ptr::null_mut;
-use std::slice;
-
-use libc::c_void;
-use libc::funcs::c95::stdlib::free;
 
 use zopfli::*;
 
@@ -87,16 +82,13 @@ unsafe fn compress_file(options: &Options, output_type: Format, infilename: &str
     if input.len() == 0 {
         println_err!("Invalid filename: {}", infilename);
     } else {
-        let mut output: *mut u8 = null_mut();
-        let mut outsize: usize = 0;
-        compress(options, output_type, &input, &mut output, &mut outsize);
+        let output = compress(options, output_type, &input);
 
         if let Some(f) = outfilename {
-            save_file(&f, output, outsize);
+            save_file(&f, &output);
         } else {
-            std::io::stdout().write(slice::from_raw_parts(output, outsize)).unwrap();
+            std::io::stdout().write(&output).unwrap();
         }
-        free(output as *mut c_void);
     }
 }
 
@@ -112,7 +104,7 @@ fn load_file(filename: &str) -> Vec<u8> {
     b
 }
 
-unsafe fn save_file(filename: &str, buf: *mut u8, size: usize) {
+fn save_file(filename: &str, buf: &[u8]) {
     let mut f = File::create(filename).unwrap();
-    f.write(slice::from_raw_parts(buf, size)).unwrap();
+    f.write(buf).unwrap();
 }

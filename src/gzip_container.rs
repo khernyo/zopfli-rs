@@ -56,39 +56,42 @@ unsafe fn crc(buf: &[u8]) -> u64 {
  *   be freed after use.
  * outsize: pointer to the dynamic output array size.
  */
-pub unsafe fn compress(options: *const Options, input: &[u8], out: *mut *mut u8, outsize: *mut usize) {
+pub unsafe fn compress(options: *const Options, input: &[u8]) -> Vec<u8> {
     let crcvalue: u64 = crc(input);
     let mut bp: u8 = 0;
 
-    append_data!(31, *out, *outsize); // ID1
-    append_data!(139, *out, *outsize); // ID2
-    append_data!(8, *out, *outsize); // CM
-    append_data!(0, *out, *outsize); // FLG
+    let mut out = Vec::new();
+    out.push(31); // ID1
+    out.push(139); // ID2
+    out.push(8); // CM
+    out.push(0); // FLG
     // MTIME
-    append_data!(0, *out, *outsize);
-    append_data!(0, *out, *outsize);
-    append_data!(0, *out, *outsize);
-    append_data!(0, *out, *outsize);
+    out.push(0);
+    out.push(0);
+    out.push(0);
+    out.push(0);
 
-    append_data!(2, *out, *outsize); // XFL, 2 indicates best compression.
-    append_data!(3, *out, *outsize); // OS follows Unix conventions.
+    out.push(2); // XFL, 2 indicates best compression.
+    out.push(3); // OS follows Unix conventions.
 
-    deflate(options, 2 /* Dynamic block */, true, input, &mut bp, out, outsize);
+    deflate(options, 2 /* Dynamic block */, true, input, &mut bp, &mut out);
 
     // CRC
-    append_data!((crcvalue % 256) as u8, *out, *outsize);
-    append_data!(((crcvalue >> 8) % 256) as u8, *out, *outsize);
-    append_data!(((crcvalue >> 16) % 256) as u8, *out, *outsize);
-    append_data!(((crcvalue >> 24) % 256) as u8, *out, *outsize);
+    out.push((crcvalue % 256) as u8);
+    out.push(((crcvalue >> 8) % 256) as u8);
+    out.push(((crcvalue >> 16) % 256) as u8);
+    out.push(((crcvalue >> 24) % 256) as u8);
 
     // ISIZE
     let insize = input.len();
-    append_data!((insize % 256) as u8, *out, *outsize);
-    append_data!(((insize >> 8) % 256) as u8, *out, *outsize);
-    append_data!(((insize >> 16) % 256) as u8, *out, *outsize);
-    append_data!(((insize >> 24) % 256) as u8, *out, *outsize);
+    out.push((insize % 256) as u8);
+    out.push(((insize >> 8) % 256) as u8);
+    out.push(((insize >> 16) % 256) as u8);
+    out.push(((insize >> 24) % 256) as u8);
 
     if (*options).verbose {
-        println_err!("Original Size: {}, Gzip: {}, Compression: {}% Removed", insize, *outsize, 100.0 * (insize as isize - *outsize as isize) as f64 / insize as f64);
+        let outsize = out.len();
+        println_err!("Original Size: {}, Gzip: {}, Compression: {}% Removed", insize, outsize, 100.0 * (insize as isize - outsize as isize) as f64 / insize as f64);
     }
+    out
 }

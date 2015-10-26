@@ -73,13 +73,15 @@ pub enum Format {
  *   be freed after use
  * outsize: pointer to the dynamic output array size
  */
-pub unsafe fn compress(options: *const Options, output_type: Format, input: &[u8], out: *mut *mut u8, outsize: *mut usize) {
+pub unsafe fn compress(options: *const Options, output_type: Format, input: &[u8]) -> Vec<u8> {
     match output_type {
-        Format::GZIP    => gzip_container::compress(options, input, out, outsize),
-        Format::ZLIB    => zlib_container::compress(options, input, out, outsize),
+        Format::GZIP    => gzip_container::compress(options, input),
+        Format::ZLIB    => zlib_container::compress(options, input),
         Format::DEFLATE => {
             let mut bp: u8 = 0;
-            deflate::deflate(options, 2 /* Dynamic block */, true, input, &mut bp, out, outsize)
+            let mut out = Vec::new();
+            deflate::deflate(options, 2 /* Dynamic block */, true, input, &mut bp, &mut out);
+            out
         },
     }
 }
@@ -88,72 +90,58 @@ pub unsafe fn compress(options: *const Options, output_type: Format, input: &[u8
 mod test {
     extern crate flate2;
 
-    use libc::{c_void, size_t};
-    use libc::funcs::c95::string::memcmp;
     use std::io::Read;
-    use std::ptr::null_mut;
-    use std::slice;
 
     use self::flate2::read::{DeflateDecoder, GzDecoder, ZlibDecoder};
     
     use super::*;
     
-    unsafe fn roundtrip(format: Format, bytes: &[u8]) {
+    fn roundtrip(format: Format, bytes: &[u8]) {
         let options = Options { verbose: false, verbose_more: false, .. Options::new() };
-        let mut compressed: *mut u8 = null_mut();
-        let mut compressed_size: usize = 0;
-        compress(&options, format, bytes, &mut compressed, &mut compressed_size);
+        let compressed = unsafe { compress(&options, format, bytes) };
         let decompressed = match format {
             Format::GZIP => {
-                let mut d = GzDecoder::new(slice::from_raw_parts(compressed, compressed_size)).unwrap();
+                let mut d = GzDecoder::new(&compressed[..]).unwrap();
                 let mut s = Vec::new();
                 d.read_to_end(&mut s).unwrap();
                 s
             }
             Format::ZLIB => {
-                let mut d = ZlibDecoder::new(slice::from_raw_parts(compressed, compressed_size));
+                let mut d = ZlibDecoder::new(&compressed[..]);
                 let mut s = Vec::new();
                 d.read_to_end(&mut s).unwrap();
                 s
             }
             Format::DEFLATE => {
-                let mut d = DeflateDecoder::new(slice::from_raw_parts(compressed, compressed_size));
+                let mut d = DeflateDecoder::new(&compressed[..]);
                 let mut s = Vec::new();
                 d.read_to_end(&mut s).unwrap();
                 s
             }
         };
-        assert!(memcmp(bytes.as_ptr() as *const c_void, decompressed.as_ptr() as *const c_void, bytes.len() as size_t) == 0);
+        assert_eq!(decompressed, bytes);
     }
 
     #[test]
     fn roundtrips() {
-        unsafe {
-            for format in vec![Format::GZIP, Format::ZLIB, Format::DEFLATE] {
-                roundtrip(format, b"1");
-                roundtrip(format, b"foobar");
-            }
+        for format in vec![Format::GZIP, Format::ZLIB, Format::DEFLATE] {
+            roundtrip(format, b"1");
+            roundtrip(format, b"foobar");
         }
     }
 
     #[test]
     #[ignore]
     fn compress_zero_bytes() {
-        unsafe {
-            for format in vec![Format::GZIP, Format::ZLIB, Format::DEFLATE] {
-                roundtrip(format, b"");
-            }
+        for format in vec![Format::GZIP, Format::ZLIB, Format::DEFLATE] {
+            roundtrip(format, b"");
         }
     }
 
     fn expect_compressed(format: Format, data: &[u8], compressed: &[u8]) {
-        unsafe {
-            let options = Options { verbose: false, verbose_more: false, .. Options::new() };
-            let mut result: *mut u8 = null_mut();
-            let mut result_size: usize = 0;
-            compress(&options, format, data, &mut result, &mut result_size);
-            assert_eq!(slice::from_raw_parts(result, result_size), compressed);
-        }
+        let options = Options { verbose: false, verbose_more: false, .. Options::new() };
+        let result = unsafe { compress(&options, format, data) };
+        assert_eq!(result, compressed);
     }
 
     #[test]
