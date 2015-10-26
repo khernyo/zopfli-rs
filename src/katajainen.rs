@@ -87,7 +87,7 @@ unsafe fn get_free_node(lists: *const [*mut Node; 2], maxbits: i32, pool: *mut N
  * final: Whether this is the last time this function is called. If it is then it
  *   is no more needed to recursively call self.
  */
-unsafe fn boundary_pm(lists: *mut [*mut Node; 2], maxbits: i32, leaves: *const Node, numsymbols: i32, pool: *mut NodePool,
+unsafe fn boundary_pm(lists: *mut [*mut Node; 2], maxbits: i32, leaves: &[Node], numsymbols: i32, pool: *mut NodePool,
                       index: i32, is_final: bool) {
     let lastcount = (*(*lists.offset(index as isize))[1]).count; // Count of last chain of list.
 
@@ -105,12 +105,12 @@ unsafe fn boundary_pm(lists: *mut [*mut Node; 2], maxbits: i32, leaves: *const N
 
     if index == 0 {
         //New leaf node in list 0.
-        init_node((*leaves.offset(lastcount as isize)).weight, lastcount + 1, null_mut(), newchain);
+        init_node(leaves[lastcount as usize].weight, lastcount + 1, null_mut(), newchain);
     } else {
         let sum = (*(*lists.offset((index - 1) as isize))[0]).weight + (*(*lists.offset((index - 1) as isize))[1]).weight;
-        if lastcount < numsymbols && sum > (*leaves.offset(lastcount as isize)).weight {
+        if lastcount < numsymbols && sum > leaves[lastcount as usize].weight {
             // New leaf inserted in list, so count is incremented.
-            init_node((*leaves.offset(lastcount as isize)).weight, lastcount + 1, (*oldchain).tail, newchain);
+            init_node(leaves[lastcount as usize].weight, lastcount + 1, (*oldchain).tail, newchain);
         } else {
             init_node(sum, lastcount, (*lists.offset((index - 1) as isize))[1], newchain);
             if !is_final {
@@ -123,11 +123,11 @@ unsafe fn boundary_pm(lists: *mut [*mut Node; 2], maxbits: i32, leaves: *const N
 }
 
 /// Initializes each list with as lookahead chains the two leaves with lowest weights.
-unsafe fn init_lists(pool: *mut NodePool, leaves: *const Node, maxbits: i32, lists: *mut [*mut Node; 2]) {
+unsafe fn init_lists(pool: *mut NodePool, leaves: &[Node], maxbits: i32, lists: *mut [*mut Node; 2]) {
     let node0 = get_free_node(null(), maxbits, pool);
     let node1 = get_free_node(null(), maxbits, pool);
-    init_node((*leaves.offset(0)).weight, 1, null_mut(), node0);
-    init_node((*leaves.offset(1)).weight, 2, null_mut(), node1);
+    init_node(leaves[0].weight, 1, null_mut(), node0);
+    init_node(leaves[1].weight, 2, null_mut(), node1);
     for i in 0..maxbits {
         (*lists.offset(i as isize))[0] = node0;
         (*lists.offset(i as isize))[1] = node1;
@@ -139,11 +139,11 @@ unsafe fn init_lists(pool: *mut NodePool, leaves: *const Node, maxbits: i32, lis
  * last chain of the last list contains the amount of active leaves in each list.
  * chain: Chain to extract the bit length from (last chain from last list).
  */
-unsafe fn extract_bit_lengths(chain: *const Node, leaves: *const Node, bitlengths: *mut u32) {
+unsafe fn extract_bit_lengths(chain: *const Node, leaves: &[Node], bitlengths: *mut u32) {
     let mut node = chain;
     while node != null() {
         for i in 0..(*node).count {
-            *bitlengths.offset((*leaves.offset(i as isize)).count as isize) = *bitlengths.offset((*leaves.offset(i as isize)).count as isize) + 1;
+            *bitlengths.offset(leaves[i as usize].count as isize) = *bitlengths.offset(leaves[i as usize].count as isize) + 1;
         }
         node = (*node).tail;
     }
@@ -164,11 +164,8 @@ extern {
 }
 
 pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, maxbits: i32, bitlengths: *mut u32) -> bool {
-    // Amount of symbols with frequency > 0.
-    let mut numsymbols: i32 = 0;
-
     // One leaf per symbol. Only numsymbols leaves will be used.
-    let leaves: *mut Node = malloc((n as usize * mem::size_of::<Node>()) as size_t) as *mut Node;
+    let mut leaves: Vec<Node> = Vec::with_capacity(n as usize);
 
     // Initialize all bitlengths at 0.
     for i in 0..n {
@@ -178,29 +175,31 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, max
     // Count used symbols and place them in the leaves.
     for i in 0..n {
         if *frequencies.offset(i as isize) != 0 {
-            (*leaves.offset(numsymbols as isize)).weight = *frequencies.offset(i as isize);
-            (*leaves.offset(numsymbols as isize)).count = i; // Index of symbol this leaf represents.
-            numsymbols += 1;
+            leaves.push(Node {
+                weight: *frequencies.offset(i as isize),
+                count: i, // Index of symbol this leaf represents.
+                tail: null_mut(),
+                in_use: false,
+            });
         }
     }
+    // Amount of symbols with frequency > 0.
+    let numsymbols = leaves.len();
 
     // Check special cases and error conditions.
     if (1 << maxbits) < numsymbols {
-        free(leaves as *mut c_void);
         return true; // Error, too few maxbits to represent symbols.
     }
     if numsymbols == 0 {
-        free(leaves as *mut c_void);
         return false; // No symbols at all. OK.
     }
     if numsymbols == 1 {
-        *bitlengths.offset((*leaves.offset(0)).count as isize) = 1;
-        free(leaves as *mut c_void);
+        *bitlengths.offset(leaves[0].count as isize) = 1;
         return false; // Only one symbol, give it bitlength 1, not 0. OK.
     }
 
     // Sort the leaves from lightest to heaviest.
-    qsort(leaves as *mut c_void, numsymbols as size_t, mem::size_of::<Node>() as size_t, leaf_comparator);
+    qsort(leaves.as_mut_ptr() as *mut c_void, numsymbols as size_t, mem::size_of::<Node>() as size_t, leaf_comparator);
 
     // Initialize node memory pool.
     let pool_size = 2 * maxbits * (maxbits + 1);
@@ -214,20 +213,19 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize, n: i32, max
     // a time, so each list is a array of two Node*'s.
     let mut lists: *mut [*mut Node; 2] = mem::uninitialized();
     lists = malloc((maxbits as usize * mem::size_of_val(&*lists)) as size_t) as *mut [*mut Node; 2];
-    init_lists(&mut pool, leaves, maxbits, lists);
+    init_lists(&mut pool, &leaves, maxbits, lists);
 
     // In the last list, 2 * numsymbols - 2 active chains need to be created. Two
     // are already created in the initialization. Each BoundaryPM run creates one.
     let num_boundary_pm_runs = 2 * numsymbols - 4;
     for i in 0..num_boundary_pm_runs {
         let is_final = i == num_boundary_pm_runs - 1;
-        boundary_pm(lists, maxbits, leaves, numsymbols as i32, &mut pool, maxbits - 1, is_final);
+        boundary_pm(lists, maxbits, &leaves, numsymbols as i32, &mut pool, maxbits - 1, is_final);
     }
 
-    extract_bit_lengths((*lists.offset(maxbits as isize - 1))[1], leaves, bitlengths);
+    extract_bit_lengths((*lists.offset(maxbits as isize - 1))[1], &leaves, bitlengths);
 
     free(lists as *mut c_void);
-    free(leaves as *mut c_void);
     free(pool.nodes as *mut c_void);
     false // OK.
 }
