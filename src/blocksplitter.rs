@@ -8,7 +8,7 @@ use std::io::Write;
 use std::mem::{transmute, uninitialized};
 use std::ptr::null_mut;
 
-use libc::{c_void, size_t};
+use libc::size_t;
 use libc::funcs::c95::stdlib::{free, malloc};
 
 use super::Options;
@@ -17,19 +17,16 @@ use deflate::calculate_block_size;
 use lz77::{BlockState, LZ77Store, lz77_greedy, clean_lz77_store};
 use util;
 
-/// The "f" for the FindMinimum function below.
-/// i: the current parameter of f(i)
-/// context: for your implementation
-type FindMinimumFun = unsafe fn(i: usize, context: *const c_void) -> f64;
-
 /// Finds minimum of function f(i) where is is of type size_t, f(i) is of type
 /// double, i is in range start-end (excluding end).
-unsafe fn find_minimum(f: FindMinimumFun, context: *const c_void, start: usize, end: usize) -> usize {
+unsafe fn find_minimum<F>(f: F, start: usize, end: usize) -> usize
+    where F: Fn(usize) -> f64 {
+
     if end - start < 1024 {
         let mut best: f64 = util::LARGE_FLOAT;
         let mut result = start;
         for i in start..end {
-            let v = f(i, context);
+            let v = f(i);
             if v < best {
                 best = v;
                 result = i;
@@ -56,7 +53,7 @@ unsafe fn find_minimum(f: FindMinimumFun, context: *const c_void, start: usize, 
 
             for i in 0..NUM {
                 p[i] = start + (i + 1) * ((end - start) / (NUM + 1));
-                vp[i] = f(p[i], context);
+                vp[i] = f(p[i]);
             }
             let mut besti: usize = 0;
             let mut best: f64 = vp[0];
@@ -105,9 +102,8 @@ struct SplitCostContext {
 /// Gets the cost which is the sum of the cost of the left and the right section
 /// of the data.
 /// type: FindMinimumFun
-unsafe fn split_cost(i: usize, context: *const c_void) -> f64 {
-    let c: *const SplitCostContext = transmute(context);
-    estimate_cost((*c).litlens, (*c).dists, (*c).start, i) + estimate_cost((*c).litlens, (*c).dists, i, (*c).end)
+unsafe fn split_cost(i: usize, c: &SplitCostContext) -> f64 {
+    estimate_cost(c.litlens, c.dists, c.start, i) + estimate_cost(c.litlens, c.dists, i, c.end)
 }
 
 unsafe fn add_sorted(value: usize, out: &mut Vec<usize>) {
@@ -214,7 +210,7 @@ pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dis
             break;
         }
 
-        let mut c = SplitCostContext {
+        let c = SplitCostContext {
             litlens: litlens,
             dists: dists,
             _llsize: llsize,
@@ -222,7 +218,7 @@ pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dis
             end: lend,
         };
         assert!(lstart < lend);
-        let llpos: usize = find_minimum(split_cost, &mut c as *mut _ as *mut c_void, lstart + 1, lend);
+        let llpos: usize = find_minimum(|i| split_cost(i, &c), lstart + 1, lend);
 
         assert!(llpos > lstart);
         assert!(llpos < lend);
