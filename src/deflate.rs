@@ -18,10 +18,11 @@ use cache;
 #[cfg(feature = "longest-match-cache")]
 use cache::LongestMatchCache;
 
-use lz77::{clean_lz77_store, lz77_counts, BlockState, LZ77Store};
+use lz77::{BlockState, LZ77Store, clean_lz77_store, lz77_counts};
 use squeeze::{lz77_optimal, lz77_optimal_fixed};
 use tree::{calculate_bit_lengths, lengths_to_symbols};
-use util::{get_length_symbol, get_dist_symbol, get_length_extra_bits_value, get_length_extra_bits, get_dist_extra_bits_value, get_dist_extra_bits};
+use util::{get_dist_extra_bits, get_dist_extra_bits_value, get_dist_symbol, get_length_extra_bits,
+           get_length_extra_bits_value, get_length_symbol};
 
 /// bp = bitpointer, always in range [0, 7].
 /// The outsize is number of necessary bytes to encode the bits.
@@ -213,7 +214,7 @@ unsafe fn encode_tree(ll_lengths: *const u32, d_lengths: *const u32, use_16: boo
         add_bits(hdist, 5, bp, out);
         add_bits(hclen, 4, bp, out);
 
-        for i in 0..hclen+4 {
+        for i in 0..hclen + 4 {
             add_bits(clcl[ORDER[i as usize] as usize], 3, bp, out);
         }
 
@@ -244,7 +245,10 @@ unsafe fn encode_tree(ll_lengths: *const u32, d_lengths: *const u32, use_16: boo
     result_size
 }
 
-unsafe fn add_dynamic_tree(ll_lengths: *const u32, d_lengths: *const u32, bp: *mut u8, out: &mut Vec<u8>) {
+unsafe fn add_dynamic_tree(ll_lengths: *const u32,
+                           d_lengths: *const u32,
+                           bp: *mut u8,
+                           out: &mut Vec<u8>) {
     let mut best: i32 = 0;
     let mut bestsize: usize = 0;
 
@@ -276,9 +280,17 @@ unsafe fn calculate_tree_size(ll_lengths: *const u32, d_lengths: *const u32) -> 
 /// Adds all lit/len and dist codes from the lists as huffman symbols. Does not add
 /// end code 256. expected_data_size is the uncompressed block size, used for
 /// assert, but you can set it to 0 to not do the assertion.
-unsafe fn add_lz77_data(litlens: *const u16, dists: *const u16, lstart: usize, lend: usize, expected_data_size: usize,
-                 ll_symbols: *const u32, ll_lengths: *const u32, d_symbols: *const u32, d_lengths: *const u32,
-                 bp: *mut u8, out: &mut Vec<u8>) {
+unsafe fn add_lz77_data(litlens: *const u16,
+                        dists: *const u16,
+                        lstart: usize,
+                        lend: usize,
+                        expected_data_size: usize,
+                        ll_symbols: *const u32,
+                        ll_lengths: *const u32,
+                        d_symbols: *const u32,
+                        d_lengths: *const u32,
+                        bp: *mut u8,
+                        out: &mut Vec<u8>) {
     let mut testlength: usize = 0;
     for i in lstart..lend {
         let dist: u32 = *dists.offset(i as isize) as u32;
@@ -286,7 +298,10 @@ unsafe fn add_lz77_data(litlens: *const u16, dists: *const u16, lstart: usize, l
         if dist == 0 {
             assert!(litlen < 256);
             assert!(*ll_lengths.offset(litlen as isize) > 0);
-            add_huffman_bits(*ll_symbols.offset(litlen as isize), *ll_lengths.offset(litlen as isize), bp, out);
+            add_huffman_bits(*ll_symbols.offset(litlen as isize),
+                             *ll_lengths.offset(litlen as isize),
+                             bp,
+                             out);
             testlength += 1;
         } else {
             let lls: u32 = get_length_symbol(litlen as i32) as u32;
@@ -294,10 +309,22 @@ unsafe fn add_lz77_data(litlens: *const u16, dists: *const u16, lstart: usize, l
             assert!(litlen >= 3 && litlen <= 288);
             assert!(*ll_lengths.offset(lls as isize) > 0);
             assert!(*d_lengths.offset(ds as isize) > 0);
-            add_huffman_bits(*ll_symbols.offset(lls as isize), *ll_lengths.offset(lls as isize), bp, out);
-            add_bits(get_length_extra_bits_value(litlen as i32) as u32, get_length_extra_bits(litlen as i32) as u32, bp, out);
-            add_huffman_bits(*d_symbols.offset(ds as isize), *d_lengths.offset(ds as isize), bp, out);
-            add_bits(get_dist_extra_bits_value(dist as i32) as u32, get_dist_extra_bits(dist as i32) as u32, bp, out);
+            add_huffman_bits(*ll_symbols.offset(lls as isize),
+                             *ll_lengths.offset(lls as isize),
+                             bp,
+                             out);
+            add_bits(get_length_extra_bits_value(litlen as i32) as u32,
+                     get_length_extra_bits(litlen as i32) as u32,
+                     bp,
+                     out);
+            add_huffman_bits(*d_symbols.offset(ds as isize),
+                             *d_lengths.offset(ds as isize),
+                             bp,
+                             out);
+            add_bits(get_dist_extra_bits_value(dist as i32) as u32,
+                     get_dist_extra_bits(dist as i32) as u32,
+                     bp,
+                     out);
             testlength += litlen as usize;
         }
     }
@@ -323,10 +350,16 @@ unsafe fn get_fixed_tree(ll_lengths: *mut u32, d_lengths: *mut u32) {
 }
 
 /// Calculates size of the part after the header and tree of an LZ77 block, in bits.
-unsafe fn calculate_block_symbol_size(ll_lengths: *const u32, d_lengths: *const u32, litlens: *const u16, dists: *const u16, lstart: usize, lend: usize) -> usize {
+unsafe fn calculate_block_symbol_size(ll_lengths: *const u32,
+                                      d_lengths: *const u32,
+                                      litlens: *const u16,
+                                      dists: *const u16,
+                                      lstart: usize,
+                                      lend: usize)
+                                      -> usize {
     let mut result: usize = 0;
     for i in lstart..lend {
-        if *dists.offset(i as isize) ==0 {
+        if *dists.offset(i as isize) == 0 {
             result += *ll_lengths.offset(*litlens.offset(i as isize) as isize) as usize;
         } else {
             result += *ll_lengths.offset(get_length_symbol(*litlens.offset(i as isize) as i32) as isize) as usize;
@@ -365,7 +398,8 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
     }
     // 2) Let's mark all population counts that already can be encoded
     // with an rle code.
-    let good_for_rle: *mut bool = malloc((length as usize * size_of::<bool>()) as size_t) as *mut bool;
+    let good_for_rle: *mut bool =
+        malloc((length as usize * size_of::<bool>()) as size_t) as *mut bool;
     for i in 0..length {
         *good_for_rle.offset(i as isize) = false;
     }
@@ -375,7 +409,7 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
     // Mark any seq of non-0's that is longer than 7 as a good_for_rle.
     let mut symbol: usize = *counts.offset(0);
     let mut stride: i32 = 0;
-    for i in 0..length+1 {
+    for i in 0..length + 1 {
         if i == length || *counts.offset(i as isize) != symbol {
             if (symbol == 0 && stride >= 5) || (symbol != 0 && stride >= 7) {
                 for k in 0..stride {
@@ -440,7 +474,12 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
 /// lengths that give the smallest size of tree encoding + encoding of all the
 /// symbols to have smallest output size. This are not necessarily the ideal Huffman
 /// bit lengths.
-unsafe fn get_dynamic_lengths(litlens: *const u16, dists: *const u16, lstart: usize, lend: usize, ll_lengths: *mut u32, d_lengths: *mut u32) {
+unsafe fn get_dynamic_lengths(litlens: *const u16,
+                              dists: *const u16,
+                              lstart: usize,
+                              lend: usize,
+                              ll_lengths: *mut u32,
+                              d_lengths: *mut u32) {
     let mut ll_counts: [usize; 288] = uninitialized();
     let mut d_counts: [usize; 32] = uninitialized();
 
@@ -457,7 +496,12 @@ unsafe fn get_dynamic_lengths(litlens: *const u16, dists: *const u16, lstart: us
 /// dists: ll77 distances
 /// lstart: start of block
 /// lend: end of block (not inclusive)
-pub unsafe fn calculate_block_size(litlens: *const u16, dists: *const u16, lstart: usize, lend: usize, btype: i32) -> f64 {
+pub unsafe fn calculate_block_size(litlens: *const u16,
+                                   dists: *const u16,
+                                   lstart: usize,
+                                   lend: usize,
+                                   btype: i32)
+                                   -> f64 {
     let mut ll_lengths: [u32; 288] = uninitialized();
     let mut d_lengths: [u32; 32] = uninitialized();
 
@@ -496,8 +540,16 @@ pub unsafe fn calculate_block_size(litlens: *const u16, dists: *const u16, lstar
  * out: dynamic output array to append to
  * outsize: dynamic output array size
  */
-unsafe fn add_lz77_block(options: *const Options, btype: i32, is_final: bool, litlens: *const u16, dists: *const u16, lstart: usize, lend: usize,
-                         expected_data_size: usize, bp: *mut u8, out: &mut Vec<u8>) {
+unsafe fn add_lz77_block(options: *const Options,
+                         btype: i32,
+                         is_final: bool,
+                         litlens: *const u16,
+                         dists: *const u16,
+                         lstart: usize,
+                         lend: usize,
+                         expected_data_size: usize,
+                         bp: *mut u8,
+                         out: &mut Vec<u8>) {
     let mut ll_lengths: [u32; 288] = uninitialized();
     let mut d_lengths: [u32; 32] = uninitialized();
     let mut ll_symbols: [u32; 288] = uninitialized();
@@ -542,7 +594,13 @@ unsafe fn add_lz77_block(options: *const Options, btype: i32, is_final: bool, li
     }
 }
 
-unsafe fn deflate_dynamic_block(options: *const Options, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: *mut u8, out: &mut Vec<u8>) {
+unsafe fn deflate_dynamic_block(options: *const Options,
+                                is_final: bool,
+                                in_: &[u8],
+                                instart: usize,
+                                inend: usize,
+                                bp: *mut u8,
+                                out: &mut Vec<u8>) {
     let blocksize: usize = inend - instart;
 
     #[cfg(feature = "longest-match-cache")]
@@ -590,7 +648,13 @@ unsafe fn deflate_dynamic_block(options: *const Options, is_final: bool, in_: &[
     clean_lz77_store(&mut store);
 }
 
-unsafe fn deflate_fixed_block(options: *const Options, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: *mut u8, out: &mut Vec<u8>) {
+unsafe fn deflate_fixed_block(options: *const Options,
+                              is_final: bool,
+                              in_: &[u8],
+                              instart: usize,
+                              inend: usize,
+                              bp: *mut u8,
+                              out: &mut Vec<u8>) {
     let blocksize: usize = inend - instart;
 
     #[cfg(feature = "longest-match-cache")]
@@ -621,7 +685,13 @@ unsafe fn deflate_fixed_block(options: *const Options, is_final: bool, in_: &[u8
     clean_lz77_store(&mut store);
 }
 
-unsafe fn deflate_non_compressed_block(_options: *const Options, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: *mut u8, out: &mut Vec<u8>) {
+unsafe fn deflate_non_compressed_block(_options: *const Options,
+                                       is_final: bool,
+                                       in_: &[u8],
+                                       instart: usize,
+                                       inend: usize,
+                                       bp: *mut u8,
+                                       out: &mut Vec<u8>) {
     let blocksize: usize = inend - instart;
     let nlen: u16 = !blocksize as u16;
 
@@ -644,7 +714,14 @@ unsafe fn deflate_non_compressed_block(_options: *const Options, is_final: bool,
     }
 }
 
-unsafe fn deflate_block(options: *const Options, btype: i32, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: *mut u8, out: &mut Vec<u8>) {
+unsafe fn deflate_block(options: *const Options,
+                        btype: i32,
+                        is_final: bool,
+                        in_: &[u8],
+                        instart: usize,
+                        inend: usize,
+                        bp: *mut u8,
+                        out: &mut Vec<u8>) {
     if btype == 0 {
         deflate_non_compressed_block(options, is_final, in_, instart, inend, bp, out);
     } else if btype == 1 {
@@ -657,7 +734,14 @@ unsafe fn deflate_block(options: *const Options, btype: i32, is_final: bool, in_
 /// Does squeeze strategy where first block splitting is done, then each block is
 /// squeezed.
 /// Parameters: see description of the ZopfliDeflate function.
-unsafe fn deflate_splitting_first(options: *const Options, btype: i32, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: *mut u8, out: &mut Vec<u8>) {
+unsafe fn deflate_splitting_first(options: *const Options,
+                                  btype: i32,
+                                  is_final: bool,
+                                  in_: &[u8],
+                                  instart: usize,
+                                  inend: usize,
+                                  bp: *mut u8,
+                                  out: &mut Vec<u8>) {
     let mut splitpoints: Vec<usize> = Vec::new();
     if btype == 0 {
         block_split_simple(in_, instart, inend, 65535, &mut splitpoints);
@@ -678,7 +762,14 @@ unsafe fn deflate_splitting_first(options: *const Options, btype: i32, is_final:
 /// Does squeeze strategy where first the best possible lz77 is done, and then based
 /// on that data, block splitting is done.
 /// Parameters: see description of the ZopfliDeflate function.
-unsafe fn deflate_splitting_last(options: *const Options, btype: i32, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: *mut u8, out: &mut Vec<u8>) {
+unsafe fn deflate_splitting_last(options: *const Options,
+                                 btype: i32,
+                                 is_final: bool,
+                                 in_: &[u8],
+                                 instart: usize,
+                                 inend: usize,
+                                 bp: *mut u8,
+                                 out: &mut Vec<u8>) {
     #[cfg(feature = "longest-match-cache")]
     unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
         BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
@@ -744,7 +835,14 @@ unsafe fn deflate_splitting_last(options: *const Options, btype: i32, is_final: 
  * This function will usually output multiple deflate blocks. If final is 1, then
  * the final bit will be set on the last block.
 */
-unsafe fn deflate_part(options: *const Options, btype: i32, is_final: bool, input: &[u8], instart: usize, inend: usize, bp: *mut u8, out: &mut Vec<u8>) {
+unsafe fn deflate_part(options: *const Options,
+                       btype: i32,
+                       is_final: bool,
+                       input: &[u8],
+                       instart: usize,
+                       inend: usize,
+                       bp: *mut u8,
+                       out: &mut Vec<u8>) {
     if (*options).blocksplitting {
         if (*options).blocksplittinglast {
             deflate_splitting_last(options, btype, is_final, input, instart, inend, bp, out);
@@ -779,7 +877,12 @@ unsafe fn deflate_part(options: *const Options, btype: i32, is_final: bool, inpu
  *   be freed after use.
  * outsize: pointer to the dynamic output array size.
  */
-pub unsafe fn deflate(options: *const Options, btype: i32, is_final: bool, input: &[u8], bp: *mut u8, out: &mut Vec<u8>) {
+pub unsafe fn deflate(options: *const Options,
+                      btype: i32,
+                      is_final: bool,
+                      input: &[u8],
+                      bp: *mut u8,
+                      out: &mut Vec<u8>) {
     let offset: usize = out.len();
 
     let insize = input.len();
@@ -798,6 +901,10 @@ pub unsafe fn deflate(options: *const Options, btype: i32, is_final: bool, input
 
     let outsize = out.len();
     if (*options).verbose {
-        println_err!("Original Size: {}, Deflate: {}, Compression: {}% Removed", insize, outsize - offset, 100.0 * (insize as isize - (outsize - offset) as isize) as f64 / insize as f64);
+        println_err!("Original Size: {}, Deflate: {}, Compression: {}% Removed",
+                     insize,
+                     outsize - offset,
+                     100.0 * (insize as isize - (outsize - offset) as isize) as f64 /
+                     insize as f64);
     }
 }

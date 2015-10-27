@@ -18,7 +18,7 @@ use super::util;
 use super::Options;
 
 use hash::Hash;
-use util::{MIN_MATCH, MAX_MATCH, MAX_CHAIN_HITS, WINDOW_MASK, WINDOW_SIZE};
+use util::{MAX_CHAIN_HITS, MAX_MATCH, MIN_MATCH, WINDOW_MASK, WINDOW_SIZE};
 
 /// Stores lit/length and dist pairs for LZ77.
 /// Parameter litlens: Contains the literal symbols or length values.
@@ -74,7 +74,11 @@ pub struct BlockState {
 
 impl BlockState {
     #[cfg(feature = "longest-match-cache")]
-    pub fn new(options: *const Options, blockstart: usize, blockend: usize, lmc: *mut LongestMatchCache) -> BlockState {
+    pub fn new(options: *const Options,
+               blockstart: usize,
+               blockend: usize,
+               lmc: *mut LongestMatchCache)
+               -> BlockState {
         BlockState {
             options: options,
             blockstart: blockstart,
@@ -84,7 +88,11 @@ impl BlockState {
     }
 
     #[cfg(not(feature = "longest-match-cache"))]
-    pub fn new(options: *const Options, blockstart: usize, blockend: usize, _lmc: *mut ()) -> BlockState {
+    pub fn new(options: *const Options,
+               blockstart: usize,
+               blockend: usize,
+               _lmc: *mut ())
+               -> BlockState {
         BlockState {
             options: options,
             blockstart: blockstart,
@@ -100,7 +108,8 @@ pub unsafe fn clean_lz77_store(store: *mut LZ77Store) {
 
 pub unsafe fn copy_lz77_store(source: *const LZ77Store, dest: *mut LZ77Store) {
     clean_lz77_store(dest);
-    (*dest).litlens = malloc((size_of_val(&*(*dest).litlens) * (*source).size) as size_t) as *mut u16;
+    (*dest).litlens = malloc((size_of_val(&*(*dest).litlens) *
+                              (*source).size) as size_t) as *mut u16;
     (*dest).dists = malloc((size_of_val(&*(*dest).dists) * (*source).size) as size_t) as *mut u16;
 
     if (*dest).litlens == null_mut() || (*dest).dists == null_mut() {
@@ -157,12 +166,13 @@ fn get_length_score(length: i32, distance: i32) -> i32 {
 
 /// Verifies if length and dist are indeed valid, only used for assertion.
 pub unsafe fn verify_len_dist(data: &[u8], datasize: usize, pos: usize, dist: u16, length: u16) {
-    /* TODO(lode): make this only run in a debug compile, it's for assert only. */
+    // TODO(lode): make this only run in a debug compile, it's for assert only.
 
     assert!(pos + length as usize <= datasize);
     for i in 0..length {
         if data[pos - dist as usize + i as usize] != data[pos + i as usize] {
-            assert_eq!(data[pos - dist as usize + i as usize], data[pos + i as usize]);
+            assert_eq!(data[pos - dist as usize + i as usize],
+                       data[pos + i as usize]);
             break;
         }
     }
@@ -177,7 +187,11 @@ pub unsafe fn verify_len_dist(data: &[u8], datasize: usize, pos: usize, dist: u1
  * end is the last possible byte, beyond which to stop looking.
  * safe_end is a few (8) bytes before end, for comparing multiple bytes at once.
  */
-unsafe fn get_match(scan: *const u8, match_: *const u8, end: *const u8, safe_end: *const u8) -> *const u8 {
+unsafe fn get_match(scan: *const u8,
+                    match_: *const u8,
+                    end: *const u8,
+                    safe_end: *const u8)
+                    -> *const u8 {
     let mut scan = scan;
     let mut match_ = match_;
     if size_of::<size_t>() == 8 {
@@ -194,13 +208,16 @@ unsafe fn get_match(scan: *const u8, match_: *const u8, end: *const u8, safe_end
         }
     } else {
         // do 8 checks at once per array bounds check.
-        while scan < safe_end && *scan == *match_ && *(scan.offset(1)) == *(match_.offset(1))
-            && *(scan.offset(2)) == *(match_.offset(2)) && *(scan.offset(3)) == *(match_.offset(3))
-            && *(scan.offset(4)) == *(match_.offset(4)) && *(scan.offset(5)) == *(match_.offset(5))
-            && *(scan.offset(6)) == *(match_.offset(6)) && *(scan.offset(7)) == *(match_.offset(7)) {
-                scan = scan.offset(8);
-                match_ = match_.offset(8);
-            }
+        while scan < safe_end && *scan == *match_ && *(scan.offset(1)) == *(match_.offset(1)) &&
+              *(scan.offset(2)) == *(match_.offset(2)) &&
+              *(scan.offset(3)) == *(match_.offset(3)) &&
+              *(scan.offset(4)) == *(match_.offset(4)) &&
+              *(scan.offset(5)) == *(match_.offset(5)) &&
+              *(scan.offset(6)) == *(match_.offset(6)) &&
+              *(scan.offset(7)) == *(match_.offset(7)) {
+            scan = scan.offset(8);
+            match_ = match_.offset(8);
+        }
     }
 
     // The remaining few bytes.
@@ -213,7 +230,13 @@ unsafe fn get_match(scan: *const u8, match_: *const u8, end: *const u8, safe_end
 }
 
 #[cfg(not(feature = "longest-match-cache"))]
-fn try_get_from_longest_match_cache(_s: *const BlockState, _pos: usize, _limit: *mut usize, _sublen: *mut u16, _distance: *mut u16, _length: *mut u16) -> bool {
+fn try_get_from_longest_match_cache(_s: *const BlockState,
+                                    _pos: usize,
+                                    _limit: *mut usize,
+                                    _sublen: *mut u16,
+                                    _distance: *mut u16,
+                                    _length: *mut u16)
+                                    -> bool {
     false
 }
 
@@ -222,7 +245,13 @@ fn try_get_from_longest_match_cache(_s: *const BlockState, _pos: usize, _limit: 
 /// Updates the limit value to a smaller one if possible with more limited
 /// information from the cache.
 #[cfg(feature = "longest-match-cache")]
-unsafe fn try_get_from_longest_match_cache(s: *const BlockState, pos: usize, limit: *mut usize, sublen: *mut u16, distance: *mut u16, length: *mut u16) -> bool {
+unsafe fn try_get_from_longest_match_cache(s: *const BlockState,
+                                           pos: usize,
+                                           limit: *mut usize,
+                                           sublen: *mut u16,
+                                           distance: *mut u16,
+                                           length: *mut u16)
+                                           -> bool {
     // The LMC cache starts at the beginning of the block rather than the
     // beginning of the whole array.
     let lmcpos: isize = pos as isize - (*s).blockstart as isize;
@@ -242,7 +271,8 @@ unsafe fn try_get_from_longest_match_cache(s: *const BlockState, pos: usize, lim
                 cache::cache_to_sublen((*s).lmc, lmcpos as usize, *length as usize, sublen);
                 *distance = *sublen.offset(*length as isize);
                 if *limit == MAX_MATCH && *length >= MIN_MATCH as u16 {
-                    assert_eq!(*sublen.offset(*length as isize), *(*(*s).lmc).dist.offset(lmcpos));
+                    assert_eq!(*sublen.offset(*length as isize),
+                               *(*(*s).lmc).dist.offset(lmcpos));
                 }
             } else {
                 *distance = *(*(*s).lmc).dist.offset(lmcpos);
@@ -257,19 +287,32 @@ unsafe fn try_get_from_longest_match_cache(s: *const BlockState, pos: usize, lim
 }
 
 #[cfg(not(feature = "longest-match-cache"))]
-fn store_in_longest_match_cache(_s: *const BlockState, _pos: usize, _limit: usize, _sublen: *const u16, _distance: u16, _length: u16) { }
+fn store_in_longest_match_cache(_s: *const BlockState,
+                                _pos: usize,
+                                _limit: usize,
+                                _sublen: *const u16,
+                                _distance: u16,
+                                _length: u16) {
+}
 
 /// Stores the found sublen, distance and length in the longest match cache, if
 /// possible.
 #[cfg(feature = "longest-match-cache")]
-unsafe fn store_in_longest_match_cache(s: *const BlockState, pos: usize, limit: usize, sublen: *const u16, distance: u16, length: u16) {
+unsafe fn store_in_longest_match_cache(s: *const BlockState,
+                                       pos: usize,
+                                       limit: usize,
+                                       sublen: *const u16,
+                                       distance: u16,
+                                       length: u16) {
     // The LMC cache starts at the beginning of the block rather than the
     // beginning of the whole array.
     let lmcpos: isize = pos as isize - (*s).blockstart as isize;
 
     // Length > 0 and dist 0 is invalid combination, which indicates on purpose
     // that this cache value is not filled in yet.
-    let cache_available: bool = (*s).lmc != null_mut() && (*(*(*s).lmc).length.offset(lmcpos) == 0 || *(*(*s).lmc).dist.offset(lmcpos) != 0);
+    let cache_available: bool = (*s).lmc != null_mut() &&
+                                (*(*(*s).lmc).length.offset(lmcpos) == 0 ||
+                                 *(*(*s).lmc).dist.offset(lmcpos) != 0);
 
     if (*s).lmc != null_mut() && limit == MAX_MATCH && !sublen.is_null() && !cache_available {
         assert_eq!(*(*(*s).lmc).length.offset(lmcpos), 1);
@@ -297,7 +340,15 @@ unsafe fn store_in_longest_match_cache(s: *const BlockState, pos: usize, limit: 
  *     are used, the first 3 are ignored (the shortest length is 3. It is purely
  *     for convenience that the array is made 3 longer).
  */
-pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: &[u8], pos: usize, size: usize, limit: usize, sublen: *mut u16, distance: *mut u16, length: *mut u16) {
+pub unsafe fn find_longest_match(s: *const BlockState,
+                                 h: *const Hash,
+                                 array: &[u8],
+                                 pos: usize,
+                                 size: usize,
+                                 limit: usize,
+                                 sublen: *mut u16,
+                                 distance: *mut u16,
+                                 length: *mut u16) {
     let mut limit = limit;
 
     let hpos: u16 = (pos & WINDOW_MASK) as u16;
@@ -365,10 +416,21 @@ pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: &[
             // Testing the byte at position bestlength first, goes slightly faster.
             if pos + bestlength as usize >= size || *scan.offset(bestlength as isize) == *match_.offset(bestlength as isize) {
                 #[cfg(not(feature = "hash-same"))]
-                fn do_hash_same(_h: *const Hash, _pos: usize, _limit: usize, _scan: *mut *const u8, _match: *mut *const u8, _dist: u32) { }
+                fn do_hash_same(_h: *const Hash,
+                                _pos: usize,
+                                _limit: usize,
+                                _scan: *mut *const u8,
+                                _match: *mut *const u8,
+                                _dist: u32) {
+                }
 
                 #[cfg(feature = "hash-same")]
-                unsafe fn do_hash_same(h: *const Hash, pos: usize, limit: usize, scan: *mut *const u8, match_: *mut *const u8, dist: u32) {
+                unsafe fn do_hash_same(h: *const Hash,
+                                       pos: usize,
+                                       limit: usize,
+                                       scan: *mut *const u8,
+                                       match_: *mut *const u8,
+                                       dist: u32) {
                     let same0: u16 = *(*h).hash_same.same.offset((pos & WINDOW_MASK) as isize);
                     if same0 > 2 && **scan == **match_ {
                         let same1: u16 = *(*h).hash_same.same.offset(((pos - dist as usize) & WINDOW_MASK) as isize);
@@ -389,7 +451,7 @@ pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: &[
 
             if currentlength > bestlength {
                 if !sublen.is_null() {
-                    for j in bestlength+1..currentlength+1 {
+                    for j in bestlength + 1..currentlength + 1 {
                         *sublen.offset(j as isize) = dist as u16;
                     }
                 }
@@ -402,10 +464,25 @@ pub unsafe fn find_longest_match(s: *const BlockState, h: *const Hash, array: &[
         }
 
         #[cfg(not(feature = "hash-same-hash"))]
-        fn do_hash_same_hash(_h: *const Hash, _hhead: *mut *const i32, _hprev: *mut *const u16, _hhashval: *mut *const i32, _hval: *mut i32, _bestlength: u16, _hpos: u16, _p: u16) { }
+        fn do_hash_same_hash(_h: *const Hash,
+                             _hhead: *mut *const i32,
+                             _hprev: *mut *const u16,
+                             _hhashval: *mut *const i32,
+                             _hval: *mut i32,
+                             _bestlength: u16,
+                             _hpos: u16,
+                             _p: u16) {
+        }
 
         #[cfg(feature = "hash-same-hash")]
-        unsafe fn do_hash_same_hash(h: *const Hash, hhead: *mut *const i32, hprev: *mut *const u16, hhashval: *mut *const i32, hval: *mut i32, bestlength: u16, hpos: u16, p: u16) {
+        unsafe fn do_hash_same_hash(h: *const Hash,
+                                    hhead: *mut *const i32,
+                                    hprev: *mut *const u16,
+                                    hhashval: *mut *const i32,
+                                    hval: *mut i32,
+                                    bestlength: u16,
+                                    hpos: u16,
+                                    p: u16) {
             // Switch to the other hash once this will be more efficient.
             if *hhead != (*h).hash_same_hash.head2 && bestlength >= *(*h).hash_same.same.offset(hpos as isize) && (*h).hash_same_hash.val2 == *(*h).hash_same_hash.hashval2.offset(p as isize) {
                 // Now use the hash that encodes the length and first byte.
@@ -550,7 +627,12 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: &[u8], instart: usize, inen
  *     standard)
  * d_count: count of each dist symbol, must have size 32 (see deflate standard)
  */
-pub unsafe fn lz77_counts(litlens: *const u16, dists: *const u16, start: usize, end: usize, ll_count: *mut usize, d_count: *mut usize) {
+pub unsafe fn lz77_counts(litlens: *const u16,
+                          dists: *const u16,
+                          start: usize,
+                          end: usize,
+                          ll_count: *mut usize,
+                          d_count: *mut usize) {
     for i in 0..288 {
         *ll_count.offset(i) = 0;
     }

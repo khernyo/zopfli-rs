@@ -14,7 +14,7 @@ pub unsafe fn lengths_to_symbols(lengths: *const u32, n: usize, maxbits: u32, sy
 
     // 1) Count the number of codes for each code length. Let bl_count[N] be the
     // number of codes of length N, N >= 1.
-    for bits in 0..maxbits+1 {
+    for bits in 0..maxbits + 1 {
         *bl_count.offset(bits as isize) = 0;
     }
     for i in 0..n {
@@ -25,7 +25,7 @@ pub unsafe fn lengths_to_symbols(lengths: *const u32, n: usize, maxbits: u32, sy
     // 2) Find the numerical value of the smallest code for each code length.
     let mut code = 0;
     *bl_count.offset(0) = 0;
-    for bits in 1..maxbits+1 {
+    for bits in 1..maxbits + 1 {
         code = (code + *bl_count.offset(bits as isize - 1)) << 1;
         *next_code.offset(bits as isize) = code;
     }

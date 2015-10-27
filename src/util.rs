@@ -156,15 +156,18 @@ macro_rules! append_data {
     ($value:expr, $data:expr, $size:expr) => {{
         #[inline]
         unsafe fn append_data<T>(value: T, data: *mut *mut T, size: *mut usize) {
+            use ::std::mem::size_of_val;
+            use ::libc::{c_void, size_t};
+            use ::libc::funcs::c95::stdlib::{malloc, realloc};
             if *size == 0 || (*size).is_power_of_two() {
                 // double alloc size if it's a power of two
                 *data =
                     if *size == 0 {
-                        let malloc_size = ::std::mem::size_of_val(&**data) as ::libc::size_t;
-                        ::std::mem::transmute(::libc::funcs::c95::stdlib::malloc(malloc_size))
+                        let malloc_size = size_of_val(&**data) as size_t;
+                        ::std::mem::transmute(malloc(malloc_size))
                     } else {
-                        let new_size = (*size * 2 * ::std::mem::size_of_val(&**data)) as ::libc::size_t;
-                        ::std::mem::transmute(::libc::funcs::c95::stdlib::realloc(*data as *mut ::libc::c_void, new_size))
+                        let new_size = (*size * 2 * size_of_val(&**data)) as size_t;
+                        ::std::mem::transmute(realloc(*data as *mut c_void, new_size))
                     }
             }
             *(*data).offset(*size as isize) = value;

@@ -74,7 +74,12 @@ pub unsafe fn compress(options: *const Options, input: &[u8]) -> Vec<u8> {
     out.push(2); // XFL, 2 indicates best compression.
     out.push(3); // OS follows Unix conventions.
 
-    deflate(options, 2 /* Dynamic block */, true, input, &mut bp, &mut out);
+    deflate(options,
+            2, // Dynamic block
+            true,
+            input,
+            &mut bp,
+            &mut out);
 
     // CRC
     out.push((crcvalue % 256) as u8);
@@ -91,7 +96,10 @@ pub unsafe fn compress(options: *const Options, input: &[u8]) -> Vec<u8> {
 
     if (*options).verbose {
         let outsize = out.len();
-        println_err!("Original Size: {}, Gzip: {}, Compression: {}% Removed", insize, outsize, 100.0 * (insize as isize - outsize as isize) as f64 / insize as f64);
+        println_err!("Original Size: {}, Gzip: {}, Compression: {}% Removed",
+                     insize,
+                     outsize,
+                     100.0 * (insize as isize - outsize as isize) as f64 / insize as f64);
     }
     out
 }

@@ -53,7 +53,12 @@ pub unsafe fn compress(options: *const Options, input: &[u8]) -> Vec<u8> {
     out.push((cmfflg / 256) as u8);
     out.push((cmfflg % 256) as u8);
 
-    deflate(options, 2 /* dynamic block */, true /* final */, input, &mut bitpointer, &mut out);
+    deflate(options,
+            2, // dynamic block
+            true, // final
+            input,
+            &mut bitpointer,
+            &mut out);
 
     out.push(((checksum >> 24) % 256) as u8);
     out.push(((checksum >> 16) % 256) as u8);
@@ -63,7 +68,10 @@ pub unsafe fn compress(options: *const Options, input: &[u8]) -> Vec<u8> {
     if (*options).verbose {
         let insize = input.len();
         let outsize = out.len();
-        println_err!("Original Size: {}, Zlib: {}, Compression: {}% Removed", insize, outsize, 100.0 * (insize as isize - outsize as isize) as f64 / insize as f64);
+        println_err!("Original Size: {}, Zlib: {}, Compression: {}% Removed",
+                     insize,
+                     outsize,
+                     100.0 * (insize as isize - outsize as isize) as f64 / insize as f64);
     }
     out
 }

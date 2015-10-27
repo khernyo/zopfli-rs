@@ -6,10 +6,12 @@ use libc::{c_void, size_t};
 use libc::funcs::c95::stdlib::{free, malloc};
 
 use deflate::calculate_block_size;
-use hash::{update_hash, warmup_hash, Hash};
-use lz77::{clean_lz77_store, copy_lz77_store, find_longest_match, lz77_greedy, store_litlen_dist, verify_len_dist, BlockState, LZ77Store};
+use hash::{Hash, update_hash, warmup_hash};
+use lz77::{BlockState, LZ77Store, clean_lz77_store, copy_lz77_store, find_longest_match,
+           lz77_greedy, store_litlen_dist, verify_len_dist};
 use tree::calculate_entropy;
-use util::{get_dist_extra_bits, get_dist_symbol, get_length_extra_bits, get_length_symbol, LARGE_FLOAT, MAX_MATCH, MIN_MATCH, WINDOW_SIZE};
+use util::{LARGE_FLOAT, MAX_MATCH, MIN_MATCH, WINDOW_SIZE, get_dist_extra_bits, get_dist_symbol,
+           get_length_extra_bits, get_length_symbol};
 
 struct SymbolStats {
     /// The literal and length symbols.
@@ -42,12 +44,19 @@ unsafe fn copy_stats(source: *const SymbolStats, dest: *mut SymbolStats) {
 }
 
 /// Adds the bit lengths.
-unsafe fn add_weighed_stat_freqs(stats1: *const SymbolStats, w1: f64, stats2: *const SymbolStats, w2: f64, result: *mut SymbolStats) {
+unsafe fn add_weighed_stat_freqs(stats1: *const SymbolStats,
+                                 w1: f64,
+                                 stats2: *const SymbolStats,
+                                 w2: f64,
+                                 result: *mut SymbolStats) {
     for i in 0..288 {
-        (*result).litlens[i] = ((*stats1).litlens[i] as f64 * w1 + (*stats2).litlens[i] as f64 * w2) as usize;
+        (*result).litlens[i] = ((*stats1).litlens[i] as f64 * w1 +
+                                (*stats2).litlens[i] as f64 *
+                                w2) as usize;
     }
     for i in 0..32 {
-        (*result).dists[i] = ((*stats1).dists[i] as f64 * w1 + (*stats2).dists[i] as f64 * w2) as usize;
+        (*result).dists[i] = ((*stats1).dists[i] as f64 * w1 +
+                              (*stats2).dists[i] as f64 * w2) as usize;
     }
     (*result).litlens[256] = 1; // End symbol.
 }
@@ -59,10 +68,7 @@ struct RanState {
 
 impl RanState {
     fn new() -> RanState {
-        RanState {
-            m_w: 1,
-            m_z: 2,
-        }
+        RanState { m_w: 1, m_z: 2 }
     }
 }
 
@@ -187,7 +193,14 @@ unsafe fn get_cost_model_min_cost(costmodel: CostModelFun, costcontext: *const c
  *     length to reach this byte from a previous byte.
  * returns the cost that was, according to the costmodel, needed to get to the end.
  */
-unsafe fn get_best_lengths(s: *const BlockState, in_: &[u8], instart: usize, inend: usize, costmodel: CostModelFun, costcontext: *const c_void, length_array: *mut u16) -> f64 {
+unsafe fn get_best_lengths(s: *const BlockState,
+                           in_: &[u8],
+                           instart: usize,
+                           inend: usize,
+                           costmodel: CostModelFun,
+                           costcontext: *const c_void,
+                           length_array: *mut u16)
+                           -> f64 {
     // Best cost to get here so far.
     let blocksize: usize = inend - instart;
     let mut leng: u16 = uninitialized();
@@ -201,7 +214,8 @@ unsafe fn get_best_lengths(s: *const BlockState, in_: &[u8], instart: usize, ine
         return 0f64;
     }
 
-    let costs: *mut f32 = malloc(size_of::<f32>() as size_t * (blocksize as size_t + 1)) as *mut f32;
+    let costs: *mut f32 = malloc(size_of::<f32>() as size_t *
+                                 (blocksize as size_t + 1)) as *mut f32;
     if costs.is_null() {
         panic!("Allocation failed");
     }
@@ -213,7 +227,7 @@ unsafe fn get_best_lengths(s: *const BlockState, in_: &[u8], instart: usize, ine
         update_hash(in_, i, inend, h);
     }
 
-    for i in 1..blocksize+1 {
+    for i in 1..blocksize + 1 {
         *costs.offset(i as isize) = LARGE_FLOAT as f32;
     }
     *costs.offset(0) = 0f32; // Because it's the start.
@@ -254,7 +268,8 @@ unsafe fn get_best_lengths(s: *const BlockState, in_: &[u8], instart: usize, ine
 
         // Literal.
         if i + 1 <= inend {
-            let new_cost: f64 = *costs.offset(j as isize) as f64 + costmodel(in_[i] as u32, 0, costcontext);
+            let new_cost: f64 = *costs.offset(j as isize) as f64 +
+                                costmodel(in_[i] as u32, 0, costcontext);
             assert!(new_cost >= 0f64);
             if new_cost < *costs.offset(j as isize + 1) as f64 {
                 *costs.offset(j as isize + 1) = new_cost as f32;
@@ -271,7 +286,8 @@ unsafe fn get_best_lengths(s: *const BlockState, in_: &[u8], instart: usize, ine
                 continue;
             }
 
-            let new_cost: f64 = *costs.offset(j as isize) as f64 + costmodel(k as u32, sublen[k] as u32, costcontext);
+            let new_cost: f64 = *costs.offset(j as isize) as f64 +
+                                costmodel(k as u32, sublen[k] as u32, costcontext);
             assert!(new_cost >= 0f64);
             if new_cost < *costs.offset((j + k) as isize) as f64 {
                 assert!(k <= MAX_MATCH);
@@ -405,8 +421,16 @@ unsafe fn get_statistics(store: *const LZ77Store, stats: *mut SymbolStats) {
  * returns the cost that was, according to the costmodel, needed to get to the end.
  *     This is not the actual cost.
  */
-unsafe fn lz77_optimal_run(s: *const BlockState, in_: &[u8], instart: usize, inend: usize, path: &mut Vec<u16>,
-                           length_array: *mut u16, costmodel: CostModelFun, costcontext: *const c_void, store: *mut LZ77Store) -> f64 {
+unsafe fn lz77_optimal_run(s: *const BlockState,
+                           in_: &[u8],
+                           instart: usize,
+                           inend: usize,
+                           path: &mut Vec<u16>,
+                           length_array: *mut u16,
+                           costmodel: CostModelFun,
+                           costcontext: *const c_void,
+                           store: *mut LZ77Store)
+                           -> f64 {
     let cost: f64 = get_best_lengths(s, in_, instart, inend, costmodel, costcontext, length_array);
     path.clear();
     trace_backwards(inend - instart, length_array, path);
@@ -420,7 +444,11 @@ unsafe fn lz77_optimal_run(s: *const BlockState, in_: &[u8], instart: usize, ine
 /// Calculates lit/len and dist pairs for given data.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-pub unsafe fn lz77_optimal(s: *const BlockState, in_: &[u8], instart: usize, inend: usize, store: *mut LZ77Store) {
+pub unsafe fn lz77_optimal(s: *const BlockState,
+                           in_: &[u8],
+                           instart: usize,
+                           inend: usize,
+                           store: *mut LZ77Store) {
     // Dist to get to here with smallest cost.
     let blocksize: usize = inend - instart;
     let length_array: *mut u16 = malloc(size_of::<u16>() as size_t * (blocksize as size_t + 1)) as *mut u16;
@@ -494,7 +522,11 @@ pub unsafe fn lz77_optimal(s: *const BlockState, in_: &[u8], instart: usize, ine
 /// using with a fixed tree.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-pub unsafe fn lz77_optimal_fixed(s: *mut BlockState, in_: &[u8], instart: usize, inend: usize, store: *mut LZ77Store) {
+pub unsafe fn lz77_optimal_fixed(s: *mut BlockState,
+                                 in_: &[u8],
+                                 instart: usize,
+                                 inend: usize,
+                                 store: *mut LZ77Store) {
     // Dist to get to here with smallest cost.
     let blocksize: usize = inend - instart;
     let length_array: *mut u16 = malloc(size_of::<u16>() as size_t * (blocksize as size_t + 1)) as *mut u16;

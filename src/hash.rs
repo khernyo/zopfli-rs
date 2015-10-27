@@ -100,9 +100,7 @@ impl HashSame {
         for i in 0..window_size {
             *same.offset(i as isize) = 0;
         }
-        HashSame {
-            same: same
-        }
+        HashSame { same: same }
     }
 
     #[cfg(not(feature = "hash-same"))]
