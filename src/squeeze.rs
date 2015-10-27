@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::iter;
 use std::mem::{size_of, uninitialized};
 use std::ptr::null_mut;
 
@@ -214,11 +215,7 @@ unsafe fn get_best_lengths(s: *const BlockState,
         return 0f64;
     }
 
-    let costs: *mut f32 = malloc(size_of::<f32>() as size_t *
-                                 (blocksize as size_t + 1)) as *mut f32;
-    if costs.is_null() {
-        panic!("Allocation failed");
-    }
+    let mut costs: Vec<f32> = iter::repeat(LARGE_FLOAT as f32).take(blocksize + 1).collect();
 
     let mut hash = Hash::new(WINDOW_SIZE);
     let h: *mut Hash = &mut hash;
@@ -227,10 +224,7 @@ unsafe fn get_best_lengths(s: *const BlockState,
         update_hash(in_, i, inend, h);
     }
 
-    for i in 1..blocksize + 1 {
-        *costs.offset(i as isize) = LARGE_FLOAT as f32;
-    }
-    *costs.offset(0) = 0f32; // Because it's the start.
+    costs[0] = 0f32; // Because it's the start.
     *length_array.offset(0) = 0;
 
     let mut i: usize = instart;
@@ -239,7 +233,7 @@ unsafe fn get_best_lengths(s: *const BlockState,
         update_hash(in_, i, inend, h);
 
         #[cfg(feature = "shortcut-long-repetitions")]
-        unsafe fn shortcut_long_repetitions(in_: &[u8], instart: usize, inend: usize, costmodel: CostModelFun, costcontext: *const c_void, length_array: *mut u16, h: *mut Hash, i: *mut usize, j: *mut usize, costs: *mut f32) {
+        unsafe fn shortcut_long_repetitions(in_: &[u8], instart: usize, inend: usize, costmodel: CostModelFun, costcontext: *const c_void, length_array: *mut u16, h: *mut Hash, i: *mut usize, j: *mut usize, costs: &mut Vec<f32>) {
             use util::WINDOW_MASK;
             // If we're in a long repetition of the same character and have more than
             // ZOPFLI_MAX_MATCH characters before and after our position.
@@ -252,7 +246,7 @@ unsafe fn get_best_lengths(s: *const BlockState,
                     // the cost corresponding to that length. Doing this, we skip
                     // ZOPFLI_MAX_MATCH values to avoid calling ZopfliFindLongestMatch.
                     for _ in 0..MAX_MATCH {
-                        *costs.offset((*j + MAX_MATCH) as isize) = (*costs.offset(*j as isize) as f64 + symbolcost) as f32;
+                        costs[*j + MAX_MATCH] = (costs[*j] as f64 + symbolcost) as f32;
                         *length_array.offset((*j + MAX_MATCH) as isize) = MAX_MATCH as u16;
                         *i += 1;
                         *j += 1;
@@ -261,18 +255,17 @@ unsafe fn get_best_lengths(s: *const BlockState,
                 }
         }
         #[cfg(not(feature = "shortcut-long-repetitions"))]
-        fn shortcut_long_repetitions(_in: &[u8], _instart: usize, _inend: usize, _costmodel: CostModelFun, _costcontext: *const c_void, _length_array: *const u16, _h: *const Hash, _i: *const usize, _j: *const usize, _costs: *const f32) { }
-        shortcut_long_repetitions(in_, instart, inend, costmodel, costcontext, length_array, h, &mut i, &mut j, costs);
+        fn shortcut_long_repetitions(_in: &[u8], _instart: usize, _inend: usize, _costmodel: CostModelFun, _costcontext: *const c_void, _length_array: *const u16, _h: *const Hash, _i: *const usize, _j: *const usize, _costs: &Vec<f32>) { }
+        shortcut_long_repetitions(in_, instart, inend, costmodel, costcontext, length_array, h, &mut i, &mut j, &mut costs);
 
         find_longest_match(s, h, in_, i, inend, MAX_MATCH, sublen.as_mut_ptr(), &mut dist, &mut leng);
 
         // Literal.
         if i + 1 <= inend {
-            let new_cost: f64 = *costs.offset(j as isize) as f64 +
-                                costmodel(in_[i] as u32, 0, costcontext);
+            let new_cost: f64 = costs[j] as f64 + costmodel(in_[i] as u32, 0, costcontext);
             assert!(new_cost >= 0f64);
-            if new_cost < *costs.offset(j as isize + 1) as f64 {
-                *costs.offset(j as isize + 1) = new_cost as f32;
+            if new_cost < costs[j + 1] as f64 {
+                costs[j + 1] = new_cost as f32;
                 *length_array.offset(j as isize + 1) = 1;
             }
         }
@@ -281,17 +274,17 @@ unsafe fn get_best_lengths(s: *const BlockState,
         while k <= leng as usize && i + k <= inend {
             // Calling the cost model is expensive, avoid this if we are already at
             // the minimum possible cost that it can return.
-            if *costs.offset((j + k) as isize) as f64 - *costs.offset(j as isize) as f64 <= mincost {
+            if costs[j + k] as f64 - costs[j] as f64 <= mincost {
                 k += 1;
                 continue;
             }
 
-            let new_cost: f64 = *costs.offset(j as isize) as f64 +
+            let new_cost: f64 = costs[j] as f64 +
                                 costmodel(k as u32, sublen[k] as u32, costcontext);
             assert!(new_cost >= 0f64);
-            if new_cost < *costs.offset((j + k) as isize) as f64 {
+            if new_cost < costs[j + k] as f64 {
                 assert!(k <= MAX_MATCH);
-                *costs.offset((j + k) as isize) = new_cost as f32;
+                costs[j + k] = new_cost as f32;
                 *length_array.offset((j + k) as isize) = k as u16;
             }
 
@@ -300,11 +293,10 @@ unsafe fn get_best_lengths(s: *const BlockState,
         i += 1;
     }
 
-    assert!(*costs.offset(blocksize as isize) >= 0f32);
-    result = *costs.offset(blocksize as isize) as f64;
+    assert!(costs[blocksize] >= 0f32);
+    result = costs[blocksize] as f64;
 
     Hash::clean(h);
-    free(costs as *mut c_void);
 
     result
 }
