@@ -1,10 +1,9 @@
 use std::io::Write;
 use std::iter;
-use std::mem::{size_of, uninitialized};
+use std::mem::uninitialized;
 use std::ptr::null_mut;
 
-use libc::{c_void, size_t};
-use libc::funcs::c95::stdlib::{free, malloc};
+use libc::c_void;
 
 use deflate::calculate_block_size;
 use hash::{Hash, update_hash, warmup_hash};
@@ -200,7 +199,7 @@ unsafe fn get_best_lengths(s: *const BlockState,
                            inend: usize,
                            costmodel: CostModelFun,
                            costcontext: *const c_void,
-                           length_array: *mut u16)
+                           length_array: &mut Vec<u16>)
                            -> f64 {
     // Best cost to get here so far.
     let blocksize: usize = inend - instart;
@@ -225,7 +224,7 @@ unsafe fn get_best_lengths(s: *const BlockState,
     }
 
     costs[0] = 0f32; // Because it's the start.
-    *length_array.offset(0) = 0;
+    length_array[0] = 0;
 
     let mut i: usize = instart;
     while i < inend {
@@ -233,7 +232,7 @@ unsafe fn get_best_lengths(s: *const BlockState,
         update_hash(in_, i, inend, h);
 
         #[cfg(feature = "shortcut-long-repetitions")]
-        unsafe fn shortcut_long_repetitions(in_: &[u8], instart: usize, inend: usize, costmodel: CostModelFun, costcontext: *const c_void, length_array: *mut u16, h: *mut Hash, i: *mut usize, j: *mut usize, costs: &mut Vec<f32>) {
+        unsafe fn shortcut_long_repetitions(in_: &[u8], instart: usize, inend: usize, costmodel: CostModelFun, costcontext: *const c_void, length_array: &mut Vec<u16>, h: *mut Hash, i: *mut usize, j: *mut usize, costs: &mut Vec<f32>) {
             use util::WINDOW_MASK;
             // If we're in a long repetition of the same character and have more than
             // ZOPFLI_MAX_MATCH characters before and after our position.
@@ -247,7 +246,7 @@ unsafe fn get_best_lengths(s: *const BlockState,
                     // ZOPFLI_MAX_MATCH values to avoid calling ZopfliFindLongestMatch.
                     for _ in 0..MAX_MATCH {
                         costs[*j + MAX_MATCH] = (costs[*j] as f64 + symbolcost) as f32;
-                        *length_array.offset((*j + MAX_MATCH) as isize) = MAX_MATCH as u16;
+                        length_array[*j + MAX_MATCH] = MAX_MATCH as u16;
                         *i += 1;
                         *j += 1;
                         update_hash(in_, *i, inend, h);
@@ -255,7 +254,7 @@ unsafe fn get_best_lengths(s: *const BlockState,
                 }
         }
         #[cfg(not(feature = "shortcut-long-repetitions"))]
-        fn shortcut_long_repetitions(_in: &[u8], _instart: usize, _inend: usize, _costmodel: CostModelFun, _costcontext: *const c_void, _length_array: *const u16, _h: *const Hash, _i: *const usize, _j: *const usize, _costs: &Vec<f32>) { }
+        fn shortcut_long_repetitions(_in: &[u8], _instart: usize, _inend: usize, _costmodel: CostModelFun, _costcontext: *const c_void, _length_array: &Vec<u16>, _h: *const Hash, _i: *const usize, _j: *const usize, _costs: &Vec<f32>) { }
         shortcut_long_repetitions(in_, instart, inend, costmodel, costcontext, length_array, h, &mut i, &mut j, &mut costs);
 
         find_longest_match(s, h, in_, i, inend, MAX_MATCH, sublen.as_mut_ptr(), &mut dist, &mut leng);
@@ -266,7 +265,7 @@ unsafe fn get_best_lengths(s: *const BlockState,
             assert!(new_cost >= 0f64);
             if new_cost < costs[j + 1] as f64 {
                 costs[j + 1] = new_cost as f32;
-                *length_array.offset(j as isize + 1) = 1;
+                length_array[j + 1] = 1;
             }
         }
         // Lengths.
@@ -285,7 +284,7 @@ unsafe fn get_best_lengths(s: *const BlockState,
             if new_cost < costs[j + k] as f64 {
                 assert!(k <= MAX_MATCH);
                 costs[j + k] = new_cost as f32;
-                *length_array.offset((j + k) as isize) = k as u16;
+                length_array[j + k] = k as u16;
             }
 
             k += 1;
@@ -305,17 +304,17 @@ unsafe fn get_best_lengths(s: *const BlockState,
 /// length_array. The length_array must contain the optimal length to reach that
 /// byte. The path will be filled with the lengths to use, so its data size will be
 /// the amount of lz77 symbols.
-unsafe fn trace_backwards(size: usize, length_array: *const u16, path: &mut Vec<u16>) {
+unsafe fn trace_backwards(size: usize, length_array: &Vec<u16>, path: &mut Vec<u16>) {
     let mut index: usize = size;
     if size == 0 {
         return;
     }
     loop {
-        path.push(*length_array.offset(index as isize));
-        assert!(*length_array.offset(index as isize) as usize <= index);
-        assert!(*length_array.offset(index as isize) as usize <= MAX_MATCH);
-        assert!(*length_array.offset(index as isize) != 0);
-        index -= *length_array.offset(index as isize) as usize;
+        path.push(length_array[index]);
+        assert!(length_array[index] as usize <= index);
+        assert!(length_array[index] as usize <= MAX_MATCH);
+        assert!(length_array[index] != 0);
+        index -= length_array[index] as usize;
         if index == 0 {
             break;
         }
@@ -418,7 +417,7 @@ unsafe fn lz77_optimal_run(s: *const BlockState,
                            instart: usize,
                            inend: usize,
                            path: &mut Vec<u16>,
-                           length_array: *mut u16,
+                           length_array: &mut Vec<u16>,
                            costmodel: CostModelFun,
                            costcontext: *const c_void,
                            store: *mut LZ77Store)
@@ -443,7 +442,7 @@ pub unsafe fn lz77_optimal(s: *const BlockState,
                            store: *mut LZ77Store) {
     // Dist to get to here with smallest cost.
     let blocksize: usize = inend - instart;
-    let length_array: *mut u16 = malloc(size_of::<u16>() as size_t * (blocksize as size_t + 1)) as *mut u16;
+    let mut length_array: Vec<u16> = iter::repeat(0).take(blocksize + 1).collect();
     let mut path: Vec<u16> = Vec::new();
     let mut currentstore = LZ77Store::new();
     let mut stats = SymbolStats::new();
@@ -455,10 +454,6 @@ pub unsafe fn lz77_optimal(s: *const BlockState,
     // Try randomizing the costs a bit once the size stabilizes.
     let mut ran_state = RanState::new();
     let mut lastrandomstep: i32 = -1;
-
-    if length_array.is_null() {
-        panic!("Allocation failed");
-    }
 
     // Do regular deflate, then loop multiple shortest path runs, each time using
     // the statistics of the previous run.
@@ -472,7 +467,7 @@ pub unsafe fn lz77_optimal(s: *const BlockState,
     for i in 0..(*(*s).options).numiterations {
         LZ77Store::clean(&mut currentstore);
         LZ77Store::init(&mut currentstore);
-        lz77_optimal_run(s, in_, instart, inend, &mut path, length_array, get_cost_stat, &stats as *const _ as *const c_void, &mut currentstore);
+        lz77_optimal_run(s, in_, instart, inend, &mut path, &mut length_array, get_cost_stat, &stats as *const _ as *const c_void, &mut currentstore);
         cost = calculate_block_size(currentstore.litlens, currentstore.dists, 0, currentstore.size, 2);
         if (*(*s).options).verbose_more || ((*(*s).options).verbose && cost < bestcost) {
             println_err!("Iteration {}: {} bit", i, cost as i32);
@@ -502,7 +497,6 @@ pub unsafe fn lz77_optimal(s: *const BlockState,
         lastcost = cost;
     }
 
-    free(length_array as *mut c_void);
     clean_lz77_store(&mut currentstore);
 }
 
@@ -521,19 +515,13 @@ pub unsafe fn lz77_optimal_fixed(s: *mut BlockState,
                                  store: *mut LZ77Store) {
     // Dist to get to here with smallest cost.
     let blocksize: usize = inend - instart;
-    let length_array: *mut u16 = malloc(size_of::<u16>() as size_t * (blocksize as size_t + 1)) as *mut u16;
+    let mut length_array: Vec<u16> = iter::repeat(0).take(blocksize + 1).collect();
     let mut path: Vec<u16> = Vec::new();
-
-    if length_array.is_null() {
-        panic!("Allocation failed");
-    }
 
     (*s).blockstart = instart;
     (*s).blockend = inend;
 
     // Shortest path for fixed tree This one should give the shortest possible
     // result for fixed tree, no repeated runs are needed since the tree is known.
-    lz77_optimal_run(s, in_, instart, inend, &mut path, length_array, get_cost_fixed, null_mut(), store);
-
-    free(length_array as *mut c_void);
+    lz77_optimal_run(s, in_, instart, inend, &mut path, &mut length_array, get_cost_fixed, null_mut(), store);
 }
