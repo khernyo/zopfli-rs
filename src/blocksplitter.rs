@@ -5,11 +5,9 @@
 //! functions choose good ones that enhance it.
 
 use std::io::Write;
-use std::mem::{transmute, uninitialized};
+use std::iter;
+use std::mem::uninitialized;
 use std::ptr::null_mut;
-
-use libc::size_t;
-use libc::funcs::c95::stdlib::{free, malloc};
 
 use super::Options;
 
@@ -171,17 +169,18 @@ unsafe fn print_block_split_points(litlens: *const u16,
 /// lend: output variable, giving end of block.
 /// returns 1 if a block was found, 0 if no block found (all are done).
 unsafe fn find_largest_splittable_block(llsize: usize,
-                                        done: *const u8,
+                                        done: &Vec<u8>,
                                         splitpoints: &Vec<usize>,
                                         lstart: *mut usize,
                                         lend: *mut usize)
                                         -> bool {
+    assert_eq!(llsize, done.len());
     let mut longest: usize = 0;
     let mut found = false;
     for i in 0..splitpoints.len()+1 {
         let start: usize = if i == 0 { 0 } else { splitpoints[i - 1] };
         let end: usize = if i == splitpoints.len() { llsize - 1 } else { splitpoints[i] };
-        if *done.offset(start as isize) == 0 && end - start > longest {
+        if done[start] == 0 && end - start > longest {
             *lstart = start;
             *lend = end;
             found = true;
@@ -208,13 +207,7 @@ pub unsafe fn block_split_lz77(options: *const Options,
         return;
     }
 
-    let done: *mut u8 = transmute(malloc(llsize as size_t));
-    if done.is_null() {
-        panic!("Allocation failed!");
-    }
-    for i in 0..llsize {
-        *done.offset(i as isize) = 0;
-    }
+    let mut done: Vec<u8> = iter::repeat(0).take(llsize).collect();
 
     let mut lstart: usize = 0;
     let mut lend: usize = llsize;
@@ -242,13 +235,13 @@ pub unsafe fn block_split_lz77(options: *const Options,
         let origcost: f64 = estimate_cost(litlens, dists, lstart, lend);
 
         if splitcost > origcost || llpos == lstart + 1 || llpos == lend {
-            *done.offset(lstart as isize) = 1;
+            done[lstart] = 1;
         } else {
             add_sorted(llpos, splitpoints);
             numblocks += 1;
         }
 
-        if !find_largest_splittable_block(llsize, done, splitpoints, &mut lstart, &mut lend) {
+        if !find_largest_splittable_block(llsize, &done, splitpoints, &mut lstart, &mut lend) {
             // No further split will probably reduce compression.
             break;
         }
@@ -261,8 +254,6 @@ pub unsafe fn block_split_lz77(options: *const Options,
     if (*options).verbose {
         print_block_split_points(litlens, dists, llsize, splitpoints);
     }
-
-    free(transmute(done));
 }
 
 /**
