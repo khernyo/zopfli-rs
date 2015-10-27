@@ -1,12 +1,10 @@
+use std::iter;
 
-use std::mem;
-
-use libc::{c_void, size_t};
-use libc::funcs::c95::stdlib::{free, malloc};
+use libc::size_t;
 
 pub unsafe fn lengths_to_symbols(lengths: *const u32, n: usize, maxbits: u32, symbols: *mut u32) {
-    let bl_count: *mut size_t = malloc((mem::size_of::<size_t>() * (maxbits as usize + 1)) as size_t) as *mut size_t;
-    let next_code: *mut size_t = malloc((mem::size_of::<size_t>() * (maxbits as usize + 1)) as size_t) as *mut size_t;
+    let mut bl_count: Vec<size_t> = iter::repeat(0).take(maxbits as usize + 1).collect();
+    let mut next_code: Vec<size_t> = iter::repeat(0).take(maxbits as usize + 1).collect();
 
     for i in 0..n {
         *symbols.offset(i as isize) = 0;
@@ -14,20 +12,17 @@ pub unsafe fn lengths_to_symbols(lengths: *const u32, n: usize, maxbits: u32, sy
 
     // 1) Count the number of codes for each code length. Let bl_count[N] be the
     // number of codes of length N, N >= 1.
-    for bits in 0..maxbits + 1 {
-        *bl_count.offset(bits as isize) = 0;
-    }
     for i in 0..n {
         assert!(*lengths.offset(i as isize) <= maxbits, "{} <= {}", *lengths.offset(i as isize), maxbits);
-        *bl_count.offset(*lengths.offset(i as isize) as isize) += 1;
+        bl_count[*lengths.offset(i as isize) as usize] += 1;
     }
 
     // 2) Find the numerical value of the smallest code for each code length.
     let mut code = 0;
-    *bl_count.offset(0) = 0;
+    bl_count[0] = 0;
     for bits in 1..maxbits + 1 {
-        code = (code + *bl_count.offset(bits as isize - 1)) << 1;
-        *next_code.offset(bits as isize) = code;
+        code = (code + bl_count[bits as usize - 1]) << 1;
+        next_code[bits as usize] = code;
     }
 
     // 3) Assign numerical values to all codes, using consecutive values for all
@@ -35,13 +30,10 @@ pub unsafe fn lengths_to_symbols(lengths: *const u32, n: usize, maxbits: u32, sy
     for i in 0..n {
         let len = *lengths.offset(i as isize);
         if len != 0 {
-            *symbols.offset(i as isize) = *next_code.offset(len as isize) as u32;
-            *next_code.offset(len as isize) += 1;
+            *symbols.offset(i as isize) = next_code[len as usize] as u32;
+            next_code[len as usize] += 1;
         }
     }
-
-    free(bl_count as *mut c_void);
-    free(next_code as *mut c_void);
 }
 
 pub unsafe fn calculate_entropy(count: *const usize, n: usize, bitlengths: *mut f64) {
