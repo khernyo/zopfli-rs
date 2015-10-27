@@ -2,11 +2,12 @@
 //! "squeeze" LZ77 compression backend.
 
 use std::io::Write;
-use std::mem::{size_of, uninitialized};
+use std::iter;
+use std::mem::uninitialized;
 use std::ptr::null_mut;
 
-use libc::{c_void, size_t};
-use libc::funcs::c95::stdlib::{free, malloc};
+use libc::c_void;
+use libc::funcs::c95::stdlib::free;
 
 use super::Options;
 use util;
@@ -398,11 +399,7 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
     }
     // 2) Let's mark all population counts that already can be encoded
     // with an rle code.
-    let good_for_rle: *mut bool =
-        malloc((length as usize * size_of::<bool>()) as size_t) as *mut bool;
-    for i in 0..length {
-        *good_for_rle.offset(i as isize) = false;
-    }
+    let mut good_for_rle: Vec<bool> = iter::repeat(false).take(length as usize).collect();
 
     // Let's not spoil any of the existing good rle codes.
     // Mark any seq of 0's that is longer than 5 as a good_for_rle.
@@ -413,7 +410,7 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
         if i == length || *counts.offset(i as isize) != symbol {
             if (symbol == 0 && stride >= 5) || (symbol != 0 && stride >= 7) {
                 for k in 0..stride {
-                    *good_for_rle.offset(i as isize - k as isize - 1) = true;
+                    good_for_rle[i as usize - k as usize - 1] = true;
                 }
             }
             stride = 1;
@@ -430,7 +427,7 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
     let mut limit: usize = *counts.offset(0);
     let mut sum: usize = 0;
     for i in 0..length+1 {
-        if i == length || *good_for_rle.offset(i as isize)
+        if i == length || good_for_rle[i as usize]
             // Heuristic for selecting the stride ranges to collapse.
             || abs_diff(*counts.offset(i as isize), limit) >= 4 {
                 if stride >= 4 || (stride >= 3 && sum == 0) {
@@ -466,8 +463,6 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
             sum += *counts.offset(i as isize);
         }
     }
-
-    free(good_for_rle as *mut c_void);
 }
 
 /// Calculates the bit lengths for the symbols for dynamic blocks. Chooses bit
