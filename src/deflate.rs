@@ -629,13 +629,13 @@ unsafe fn deflate_dynamic_block(options: *const Options,
     add_lz77_block(s.options, btype, is_final, &store.litlens, &store.dists, 0, store.litlens.len(), blocksize, bp, out);
 
     #[cfg(feature = "longest-match-cache")]
-    unsafe fn clean_cache(s: *mut BlockState) {
-        cache::clean_cache((*s).lmc);
-        free((*s).lmc as *mut c_void);
+    unsafe fn clean_cache(s: BlockState) {
+        cache::clean_cache(s.lmc);
+        free(s.lmc as *mut c_void);
     }
     #[cfg(not(feature = "longest-match-cache"))]
-    fn clean_cache(_s: *mut BlockState) { }
-    clean_cache(&mut s);
+    fn clean_cache(_s: BlockState) { }
+    clean_cache(s);
 }
 
 unsafe fn deflate_fixed_block(options: *const Options,
@@ -664,13 +664,13 @@ unsafe fn deflate_fixed_block(options: *const Options,
     add_lz77_block(s.options, 1, is_final, &store.litlens, &store.dists, 0, store.litlens.len(), blocksize, bp, out);
 
     #[cfg(feature = "longest-match-cache")]
-    unsafe fn clean_cache(s: *mut BlockState) {
-        cache::clean_cache((*s).lmc);
-        free((*s).lmc as *mut c_void);
+    unsafe fn clean_cache(s: BlockState) {
+        cache::clean_cache(s.lmc);
+        free(s.lmc as *mut c_void);
     }
     #[cfg(not(feature = "longest-match-cache"))]
-    fn clean_cache(_s: *mut BlockState) { }
-    clean_cache(&mut s);
+    fn clean_cache(_s: BlockState) { }
+    clean_cache(s);
 }
 
 unsafe fn deflate_non_compressed_block(_options: *const Options,
@@ -800,13 +800,13 @@ unsafe fn deflate_splitting_last(options: *const Options,
     }
 
     #[cfg(feature = "longest-match-cache")]
-    unsafe fn clean_cache(s: *mut BlockState) {
-        cache::clean_cache((*s).lmc);
-        free((*s).lmc as *mut c_void);
+    unsafe fn clean_cache(s: BlockState) {
+        cache::clean_cache(s.lmc);
+        free(s.lmc as *mut c_void);
     }
     #[cfg(not(feature = "longest-match-cache"))]
-    fn clean_cache(_s: *mut BlockState) { }
-    clean_cache(&mut s);
+    fn clean_cache(_s: BlockState) { }
+    clean_cache(s);
 }
 
 /**
