@@ -193,7 +193,7 @@ unsafe fn get_cost_model_min_cost(costmodel: CostModelFun, costcontext: *const c
  *     length to reach this byte from a previous byte.
  * returns the cost that was, according to the costmodel, needed to get to the end.
  */
-unsafe fn get_best_lengths(s: *const BlockState,
+unsafe fn get_best_lengths(s: &BlockState,
                            in_: &[u8],
                            instart: usize,
                            inend: usize,
@@ -323,7 +323,7 @@ fn trace_backwards(size: usize, length_array: &Vec<u16>, path: &mut Vec<u16>) {
     path.reverse();
 }
 
-unsafe fn follow_path(s: *const BlockState, in_: &[u8], instart: usize, inend: usize, path: &Vec<u16>, store: *mut LZ77Store) {
+unsafe fn follow_path(s: &BlockState, in_: &[u8], instart: usize, inend: usize, path: &Vec<u16>, store: *mut LZ77Store) {
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
 
     let mut _total_length_test: usize = 0;
@@ -412,7 +412,7 @@ unsafe fn get_statistics(store: *const LZ77Store, stats: *mut SymbolStats) {
  * returns the cost that was, according to the costmodel, needed to get to the end.
  *     This is not the actual cost.
  */
-unsafe fn lz77_optimal_run(s: *const BlockState,
+unsafe fn lz77_optimal_run(s: &BlockState,
                            in_: &[u8],
                            instart: usize,
                            inend: usize,
@@ -435,7 +435,7 @@ unsafe fn lz77_optimal_run(s: *const BlockState,
 /// Calculates lit/len and dist pairs for given data.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-pub unsafe fn lz77_optimal(s: *const BlockState,
+pub unsafe fn lz77_optimal(s: &BlockState,
                            in_: &[u8],
                            instart: usize,
                            inend: usize,
@@ -464,11 +464,11 @@ pub unsafe fn lz77_optimal(s: *const BlockState,
 
     // Repeat statistics with each time the cost model from the previous stat
     // run.
-    for i in 0..(*(*s).options).numiterations {
+    for i in 0..(*s.options).numiterations {
         LZ77Store::init(&mut currentstore);
         lz77_optimal_run(s, in_, instart, inend, &mut path, &mut length_array, get_cost_stat, &stats as *const _ as *const c_void, &mut currentstore);
         cost = calculate_block_size(&currentstore.litlens, &currentstore.dists, 0, currentstore.litlens.len(), 2);
-        if (*(*s).options).verbose_more || ((*(*s).options).verbose && cost < bestcost) {
+        if (*s.options).verbose_more || ((*s.options).verbose && cost < bestcost) {
             println_err!("Iteration {}: {} bit", i, cost as i32);
         }
         if cost < bestcost {
@@ -505,7 +505,7 @@ pub unsafe fn lz77_optimal(s: *const BlockState,
 /// using with a fixed tree.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-pub unsafe fn lz77_optimal_fixed(s: *mut BlockState,
+pub unsafe fn lz77_optimal_fixed(s: &mut BlockState,
                                  in_: &[u8],
                                  instart: usize,
                                  inend: usize,
@@ -515,8 +515,8 @@ pub unsafe fn lz77_optimal_fixed(s: *mut BlockState,
     let mut length_array: Vec<u16> = iter::repeat(0).take(blocksize + 1).collect();
     let mut path: Vec<u16> = Vec::new();
 
-    (*s).blockstart = instart;
-    (*s).blockend = inend;
+    s.blockstart = instart;
+    s.blockend = inend;
 
     // Shortest path for fixed tree This one should give the shortest possible
     // result for fixed tree, no repeated runs are needed since the tree is known.
