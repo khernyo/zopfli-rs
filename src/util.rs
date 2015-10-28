@@ -152,31 +152,6 @@ pub fn get_length_symbol(l: i32) -> i32 {
     TABLE[l as usize]
 }
 
-macro_rules! append_data {
-    ($value:expr, $data:expr, $size:expr) => {{
-        #[inline]
-        unsafe fn append_data<T>(value: T, data: *mut *mut T, size: *mut usize) {
-            use ::std::mem::size_of_val;
-            use ::libc::{c_void, size_t};
-            use ::libc::funcs::c95::stdlib::{malloc, realloc};
-            if *size == 0 || (*size).is_power_of_two() {
-                // double alloc size if it's a power of two
-                *data =
-                    if *size == 0 {
-                        let malloc_size = size_of_val(&**data) as size_t;
-                        ::std::mem::transmute(malloc(malloc_size))
-                    } else {
-                        let new_size = (*size * 2 * size_of_val(&**data)) as size_t;
-                        ::std::mem::transmute(realloc(*data as *mut c_void, new_size))
-                    }
-            }
-            *(*data).offset(*size as isize) = value;
-            *size += 1;
-        }
-        append_data($value, &mut $data, &mut $size);
-    }}
-}
-
 #[macro_export]
 macro_rules! println_err {
     ($($arg:tt)*) => {
@@ -199,9 +174,6 @@ macro_rules! print_err {
 
 #[cfg(test)]
 mod test {
-    use std::ptr;
-    use std::slice;
-
     #[test]
     fn test_get_dist_extra_bits() {
         assert_eq!(super::get_dist_extra_bits(-1), 0);
@@ -263,19 +235,5 @@ mod test {
         assert_eq!(super::get_dist_symbol(24576), 28);
         assert_eq!(super::get_dist_symbol(24577), 29);
         assert_eq!(super::get_dist_symbol(32767), 29);
-    }
-
-    #[test]
-    fn test_append_data() {
-        unsafe {
-            let mut data: *mut i32 = ptr::null_mut();
-            let mut size = 0;
-            append_data!(1i32, data, size);
-            append_data!(2i32, data, size);
-            append_data!(3i32, data, size);
-            append_data!(4i32, data, size);
-            append_data!(5i32, data, size);
-            assert_eq!(slice::from_raw_parts(data, size), [1, 2, 3, 4, 5]);
-        }
     }
 }
