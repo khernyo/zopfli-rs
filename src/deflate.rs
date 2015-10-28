@@ -19,7 +19,7 @@ use cache;
 #[cfg(feature = "longest-match-cache")]
 use cache::LongestMatchCache;
 
-use lz77::{BlockState, LZ77Store, clean_lz77_store, lz77_counts};
+use lz77::{BlockState, LZ77Store, lz77_counts};
 use squeeze::{lz77_optimal, lz77_optimal_fixed};
 use tree::{calculate_bit_lengths, lengths_to_symbols};
 use util::{get_dist_extra_bits, get_dist_extra_bits_value, get_dist_symbol, get_length_extra_bits,
@@ -281,8 +281,8 @@ unsafe fn calculate_tree_size(ll_lengths: *const u32, d_lengths: *const u32) -> 
 /// Adds all lit/len and dist codes from the lists as huffman symbols. Does not add
 /// end code 256. expected_data_size is the uncompressed block size, used for
 /// assert, but you can set it to 0 to not do the assertion.
-unsafe fn add_lz77_data(litlens: *const u16,
-                        dists: *const u16,
+unsafe fn add_lz77_data(litlens: &Vec<u16>,
+                        dists: &Vec<u16>,
                         lstart: usize,
                         lend: usize,
                         expected_data_size: usize,
@@ -294,8 +294,8 @@ unsafe fn add_lz77_data(litlens: *const u16,
                         out: &mut Vec<u8>) {
     let mut testlength: usize = 0;
     for i in lstart..lend {
-        let dist: u32 = *dists.offset(i as isize) as u32;
-        let litlen: u32 = *litlens.offset(i as isize) as u32;
+        let dist: u32 = dists[i] as u32;
+        let litlen: u32 = litlens[i] as u32;
         if dist == 0 {
             assert!(litlen < 256);
             assert!(*ll_lengths.offset(litlen as isize) > 0);
@@ -353,20 +353,20 @@ unsafe fn get_fixed_tree(ll_lengths: *mut u32, d_lengths: *mut u32) {
 /// Calculates size of the part after the header and tree of an LZ77 block, in bits.
 unsafe fn calculate_block_symbol_size(ll_lengths: *const u32,
                                       d_lengths: *const u32,
-                                      litlens: *const u16,
-                                      dists: *const u16,
+                                      litlens: &Vec<u16>,
+                                      dists: &Vec<u16>,
                                       lstart: usize,
                                       lend: usize)
                                       -> usize {
     let mut result: usize = 0;
     for i in lstart..lend {
-        if *dists.offset(i as isize) == 0 {
-            result += *ll_lengths.offset(*litlens.offset(i as isize) as isize) as usize;
+        if dists[i] == 0 {
+            result += *ll_lengths.offset(litlens[i] as isize) as usize;
         } else {
-            result += *ll_lengths.offset(get_length_symbol(*litlens.offset(i as isize) as i32) as isize) as usize;
-            result += *d_lengths.offset(get_dist_symbol(*dists.offset(i as isize) as i32) as isize) as usize;
-            result += get_length_extra_bits(*litlens.offset(i as isize) as i32) as usize;
-            result += get_dist_extra_bits(*dists.offset(i as isize) as i32) as usize;
+            result += *ll_lengths.offset(get_length_symbol(litlens[i] as i32) as isize) as usize;
+            result += *d_lengths.offset(get_dist_symbol(dists[i] as i32) as isize) as usize;
+            result += get_length_extra_bits(litlens[i] as i32) as usize;
+            result += get_dist_extra_bits(dists[i] as i32) as usize;
         }
     }
     result += *ll_lengths.offset(256) as usize; // end symbol
@@ -469,8 +469,8 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
 /// lengths that give the smallest size of tree encoding + encoding of all the
 /// symbols to have smallest output size. This are not necessarily the ideal Huffman
 /// bit lengths.
-unsafe fn get_dynamic_lengths(litlens: *const u16,
-                              dists: *const u16,
+unsafe fn get_dynamic_lengths(litlens: &Vec<u16>,
+                              dists: &Vec<u16>,
                               lstart: usize,
                               lend: usize,
                               ll_lengths: *mut u32,
@@ -491,8 +491,8 @@ unsafe fn get_dynamic_lengths(litlens: *const u16,
 /// dists: ll77 distances
 /// lstart: start of block
 /// lend: end of block (not inclusive)
-pub unsafe fn calculate_block_size(litlens: *const u16,
-                                   dists: *const u16,
+pub unsafe fn calculate_block_size(litlens: &Vec<u16>,
+                                   dists: &Vec<u16>,
                                    lstart: usize,
                                    lend: usize,
                                    btype: i32)
@@ -538,8 +538,8 @@ pub unsafe fn calculate_block_size(litlens: *const u16,
 unsafe fn add_lz77_block(options: *const Options,
                          btype: i32,
                          is_final: bool,
-                         litlens: *const u16,
-                         dists: *const u16,
+                         litlens: &Vec<u16>,
+                         dists: &Vec<u16>,
                          lstart: usize,
                          lend: usize,
                          expected_data_size: usize,
@@ -581,7 +581,7 @@ unsafe fn add_lz77_block(options: *const Options,
 
     let mut uncompressed_size: usize = 0;
     for i in lstart..lend {
-        uncompressed_size += if *dists.offset(i as isize) == 0 { 1 } else { *litlens.offset(i as isize) } as usize;
+        uncompressed_size += if dists[i] == 0 { 1 } else { litlens[i] } as usize;
     }
     let compressed_size: usize = out.len() - detect_block_size;
     if (*options).verbose {
@@ -615,21 +615,18 @@ unsafe fn deflate_dynamic_block(options: *const Options,
 
     // For small block, encoding with fixed tree can be smaller. For large block,
     // don't bother doing this expensive test, dynamic tree will be better.
-    if store.size < 1000 {
+    if store.litlens.len() < 1000 {
         let mut fixedstore = LZ77Store::new();
         lz77_optimal_fixed(&mut s, in_, instart, inend, &mut fixedstore);
-        let dyncost: f64 = calculate_block_size(store.litlens, store.dists, 0, store.size, 2);
-        let fixedcost: f64 = calculate_block_size(fixedstore.litlens, fixedstore.dists, 0, fixedstore.size, 1);
+        let dyncost: f64 = calculate_block_size(&store.litlens, &store.dists, 0, store.litlens.len(), 2);
+        let fixedcost: f64 = calculate_block_size(&fixedstore.litlens, &fixedstore.dists, 0, fixedstore.litlens.len(), 1);
         if fixedcost < dyncost {
             btype = 1;
-            clean_lz77_store(&mut store);
             store = fixedstore;
-        } else {
-            clean_lz77_store(&mut fixedstore);
         }
     }
 
-    add_lz77_block(s.options, btype, is_final, store.litlens, store.dists, 0, store.size, blocksize, bp, out);
+    add_lz77_block(s.options, btype, is_final, &store.litlens, &store.dists, 0, store.litlens.len(), blocksize, bp, out);
 
     #[cfg(feature = "longest-match-cache")]
     unsafe fn clean_cache(s: *mut BlockState) {
@@ -639,8 +636,6 @@ unsafe fn deflate_dynamic_block(options: *const Options,
     #[cfg(not(feature = "longest-match-cache"))]
     fn clean_cache(_s: *mut BlockState) { }
     clean_cache(&mut s);
-
-    clean_lz77_store(&mut store);
 }
 
 unsafe fn deflate_fixed_block(options: *const Options,
@@ -666,7 +661,7 @@ unsafe fn deflate_fixed_block(options: *const Options,
 
     lz77_optimal_fixed(&mut s, in_, instart, inend, &mut store);
 
-    add_lz77_block(s.options, 1, is_final, store.litlens, store.dists, 0, store.size, blocksize, bp, out);
+    add_lz77_block(s.options, 1, is_final, &store.litlens, &store.dists, 0, store.litlens.len(), blocksize, bp, out);
 
     #[cfg(feature = "longest-match-cache")]
     unsafe fn clean_cache(s: *mut BlockState) {
@@ -676,8 +671,6 @@ unsafe fn deflate_fixed_block(options: *const Options,
     #[cfg(not(feature = "longest-match-cache"))]
     fn clean_cache(_s: *mut BlockState) { }
     clean_cache(&mut s);
-
-    clean_lz77_store(&mut store);
 }
 
 unsafe fn deflate_non_compressed_block(_options: *const Options,
@@ -796,13 +789,14 @@ unsafe fn deflate_splitting_last(options: *const Options,
         // If all blocks are fixed tree, splitting into separate blocks only
         // increases the total size. Leave npoints at 0, this represents 1 block.
     } else {
-        block_split_lz77(options, store.litlens, store.dists, store.size, (*options).blocksplittingmax as usize, &mut splitpoints);
+        let store_size = store.litlens.len();
+        block_split_lz77(options, &mut store.litlens, &mut store.dists, store_size, (*options).blocksplittingmax as usize, &mut splitpoints);
     }
 
     for i in 0..splitpoints.len()+1 {
         let start: usize = if i == 0 { 0 } else { splitpoints[i - 1] };
-        let end: usize = if i == splitpoints.len() { store.size } else { splitpoints[i] };
-        add_lz77_block(options, btype, i == splitpoints.len() && is_final, store.litlens, store.dists, start, end, 0, bp, out);
+        let end: usize = if i == splitpoints.len() { store.litlens.len() } else { splitpoints[i] };
+        add_lz77_block(options, btype, i == splitpoints.len() && is_final, &store.litlens, &store.dists, start, end, 0, bp, out);
     }
 
     #[cfg(feature = "longest-match-cache")]
@@ -813,8 +807,6 @@ unsafe fn deflate_splitting_last(options: *const Options,
     #[cfg(not(feature = "longest-match-cache"))]
     fn clean_cache(_s: *mut BlockState) { }
     clean_cache(&mut s);
-
-    clean_lz77_store(&mut store);
 }
 
 /**

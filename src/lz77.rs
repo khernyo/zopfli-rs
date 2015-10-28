@@ -1,12 +1,10 @@
 //! Functions for basic LZ77 compression and utilities for the "squeeze" LZ77
 //! compression.
 
-use std;
-use std::mem::{size_of, size_of_val, uninitialized};
+use std::mem::{size_of, uninitialized};
 use std::ptr::null_mut;
 
-use libc::funcs::c95::stdlib::{free, malloc};
-use libc::{c_void, size_t};
+use libc::size_t;
 
 #[cfg(feature = "longest-match-cache")]
 use super::cache;
@@ -27,33 +25,26 @@ use util::{MAX_CHAIN_HITS, MAX_MATCH, MIN_MATCH, WINDOW_MASK, WINDOW_SIZE};
 /// Parameter size: The size of both the litlens and dists arrays.
 /// The memory can best be managed by using ZopfliInitLZ77Store to initialize it,
 /// ZopfliCleanLZ77Store to destroy it, and ZopfliStoreLitLenDist to append values.
+#[derive(Clone)]
 pub struct LZ77Store {
     /// Lit or len.
-    pub litlens: *mut u16,
+    pub litlens: Vec<u16>,
     /// If 0: indicates literal in corresponding litlens,
     /// if > 0: length in corresponding litlens, this is the distance.
-    pub dists: *mut u16,
-    pub size: usize,
+    pub dists: Vec<u16>,
 }
 
 impl LZ77Store {
     pub fn new() -> LZ77Store {
         LZ77Store {
-            litlens: null_mut(),
-            dists: null_mut(),
-            size: 0,
+            litlens: Vec::new(),
+            dists: Vec::new(),
         }
     }
 
     pub unsafe fn init(store: *mut LZ77Store) {
-        (*store).litlens = null_mut();
-        (*store).dists = null_mut();
-        (*store).size = 0;
-    }
-
-    pub unsafe fn clean(store: *mut LZ77Store) {
-        free((*store).litlens as *mut c_void);
-        free((*store).dists as *mut c_void);
+        (*store).litlens.clear();
+        (*store).dists.clear();
     }
 }
 
@@ -101,36 +92,11 @@ impl BlockState {
     }
 }
 
-pub unsafe fn clean_lz77_store(store: *mut LZ77Store) {
-    free((*store).litlens as *mut c_void);
-    free((*store).dists as *mut c_void);
-}
-
-pub unsafe fn copy_lz77_store(source: *const LZ77Store, dest: *mut LZ77Store) {
-    clean_lz77_store(dest);
-    (*dest).litlens = malloc((size_of_val(&*(*dest).litlens) *
-                              (*source).size) as size_t) as *mut u16;
-    (*dest).dists = malloc((size_of_val(&*(*dest).dists) * (*source).size) as size_t) as *mut u16;
-
-    if (*dest).litlens == null_mut() || (*dest).dists == null_mut() {
-        // Allocation failed.
-        std::process::exit(-1);
-    }
-
-    (*dest).size = (*source).size;
-    for i in 0..(*source).size {
-        *(*dest).litlens.offset(i as isize) = *(*source).litlens.offset(i as isize);
-        *(*dest).dists.offset(i as isize) = *(*source).dists.offset(i as isize);
-    }
-}
-
 /// Appends the length and distance to the LZ77 arrays of the ZopfliLZ77Store.
 /// context must be a ZopfliLZ77Store*.
 pub unsafe fn store_litlen_dist(length: u16, dist: u16, store: *mut LZ77Store) {
-    // Needed for using ZOPFLI_APPEND_DATA twice.
-    let mut size2: usize = (*store).size;
-    append_data!(length, (*store).litlens, (*store).size);
-    append_data!(dist, (*store).dists, size2);
+    (*store).litlens.push(length);
+    (*store).dists.push(dist);
 }
 
 /**
@@ -165,7 +131,7 @@ fn get_length_score(length: i32, distance: i32) -> i32 {
 }
 
 /// Verifies if length and dist are indeed valid, only used for assertion.
-pub unsafe fn verify_len_dist(data: &[u8], datasize: usize, pos: usize, dist: u16, length: u16) {
+pub fn verify_len_dist(data: &[u8], datasize: usize, pos: usize, dist: u16, length: u16) {
     // TODO(lode): make this only run in a debug compile, it's for assert only.
 
     assert!(pos + length as usize <= datasize);
@@ -627,8 +593,8 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: &[u8], instart: usize, inen
  *     standard)
  * d_count: count of each dist symbol, must have size 32 (see deflate standard)
  */
-pub unsafe fn lz77_counts(litlens: *const u16,
-                          dists: *const u16,
+pub unsafe fn lz77_counts(litlens: &Vec<u16>,
+                          dists: &Vec<u16>,
                           start: usize,
                           end: usize,
                           ll_count: *mut usize,
@@ -641,11 +607,11 @@ pub unsafe fn lz77_counts(litlens: *const u16,
     }
 
     for i in start..end {
-        if *dists.offset(i as isize) == 0 {
-            *ll_count.offset(*litlens.offset(i as isize) as isize) += 1;
+        if dists[i] == 0 {
+            *ll_count.offset(litlens[i] as isize) += 1;
         } else {
-            *ll_count.offset(util::get_length_symbol(*litlens.offset(i as isize) as i32) as isize) += 1;
-            *d_count.offset(util::get_dist_symbol(*dists.offset(i as isize) as i32) as isize) += 1;
+            *ll_count.offset(util::get_length_symbol(litlens[i] as i32) as isize) += 1;
+            *d_count.offset(util::get_dist_symbol(dists[i] as i32) as isize) += 1;
         }
     }
 

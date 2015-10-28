@@ -7,8 +7,8 @@ use libc::c_void;
 
 use deflate::calculate_block_size;
 use hash::{Hash, update_hash, warmup_hash};
-use lz77::{BlockState, LZ77Store, clean_lz77_store, copy_lz77_store, find_longest_match,
-           lz77_greedy, store_litlen_dist, verify_len_dist};
+use lz77::{BlockState, LZ77Store, find_longest_match, lz77_greedy, store_litlen_dist,
+           verify_len_dist};
 use tree::calculate_entropy;
 use util::{LARGE_FLOAT, MAX_MATCH, MIN_MATCH, WINDOW_SIZE, get_dist_extra_bits, get_dist_symbol,
            get_length_extra_bits, get_length_symbol};
@@ -304,7 +304,7 @@ unsafe fn get_best_lengths(s: *const BlockState,
 /// length_array. The length_array must contain the optimal length to reach that
 /// byte. The path will be filled with the lengths to use, so its data size will be
 /// the amount of lz77 symbols.
-unsafe fn trace_backwards(size: usize, length_array: &Vec<u16>, path: &mut Vec<u16>) {
+fn trace_backwards(size: usize, length_array: &Vec<u16>, path: &mut Vec<u16>) {
     let mut index: usize = size;
     if size == 0 {
         return;
@@ -382,12 +382,12 @@ unsafe fn calculate_statistics(stats: *mut SymbolStats) {
 
 /// Appends the symbol statistics from the store.
 unsafe fn get_statistics(store: *const LZ77Store, stats: *mut SymbolStats) {
-    for i in 0..(*store).size {
-        if *(*store).dists.offset(i as isize) == 0 {
-            (*stats).litlens[*(*store).litlens.offset(i as isize) as usize] += 1;
+    for i in 0..(*store).litlens.len() {
+        if (*store).dists[i] == 0 {
+            (*stats).litlens[(*store).litlens[i] as usize] += 1;
         } else {
-            (*stats).litlens[get_length_symbol(*(*store).litlens.offset(i as isize) as i32) as usize] += 1;
-            (*stats).dists[get_dist_symbol(*(*store).dists.offset(i as isize) as i32) as usize] += 1;
+            (*stats).litlens[get_length_symbol((*store).litlens[i] as i32) as usize] += 1;
+            (*stats).dists[get_dist_symbol((*store).dists[i] as i32) as usize] += 1;
         }
     }
     (*stats).litlens[256] = 1; // End Symbol.
@@ -439,7 +439,7 @@ pub unsafe fn lz77_optimal(s: *const BlockState,
                            in_: &[u8],
                            instart: usize,
                            inend: usize,
-                           store: *mut LZ77Store) {
+                           store: &mut LZ77Store) {
     // Dist to get to here with smallest cost.
     let blocksize: usize = inend - instart;
     let mut length_array: Vec<u16> = iter::repeat(0).take(blocksize + 1).collect();
@@ -465,16 +465,15 @@ pub unsafe fn lz77_optimal(s: *const BlockState,
     // Repeat statistics with each time the cost model from the previous stat
     // run.
     for i in 0..(*(*s).options).numiterations {
-        LZ77Store::clean(&mut currentstore);
         LZ77Store::init(&mut currentstore);
         lz77_optimal_run(s, in_, instart, inend, &mut path, &mut length_array, get_cost_stat, &stats as *const _ as *const c_void, &mut currentstore);
-        cost = calculate_block_size(currentstore.litlens, currentstore.dists, 0, currentstore.size, 2);
+        cost = calculate_block_size(&currentstore.litlens, &currentstore.dists, 0, currentstore.litlens.len(), 2);
         if (*(*s).options).verbose_more || ((*(*s).options).verbose && cost < bestcost) {
             println_err!("Iteration {}: {} bit", i, cost as i32);
         }
         if cost < bestcost {
             // Copy to the output store.
-            copy_lz77_store(&currentstore, store);
+            *store = currentstore.clone();
             copy_stats(&stats, &mut beststats);
             bestcost = cost;
         }
@@ -496,8 +495,6 @@ pub unsafe fn lz77_optimal(s: *const BlockState,
         }
         lastcost = cost;
     }
-
-    clean_lz77_store(&mut currentstore);
 }
 
 /// Does the same as ZopfliLZ77Optimal, but optimized for the fixed tree of the
