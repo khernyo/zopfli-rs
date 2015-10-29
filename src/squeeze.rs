@@ -205,7 +205,7 @@ unsafe fn get_best_lengths(s: &BlockState,
     let blocksize: usize = inend - instart;
     let mut leng: u16 = uninitialized();
     let mut dist: u16 = uninitialized();
-    let mut sublen: [u16; 259] = uninitialized();
+    let mut sublen: Option<[u16; 259]> = Some(uninitialized());
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
     let result: f64;
     let mincost: f64 = get_cost_model_min_cost(costmodel, costcontext);
@@ -257,7 +257,7 @@ unsafe fn get_best_lengths(s: &BlockState,
         fn shortcut_long_repetitions(_in: &[u8], _instart: usize, _inend: usize, _costmodel: CostModelFun, _costcontext: *const c_void, _length_array: &Vec<u16>, _h: *const Hash, _i: *const usize, _j: *const usize, _costs: &Vec<f32>) { }
         shortcut_long_repetitions(in_, instart, inend, costmodel, costcontext, length_array, h, &mut i, &mut j, &mut costs);
 
-        find_longest_match(s, h, in_, i, inend, MAX_MATCH, sublen.as_mut_ptr(), &mut dist, &mut leng);
+        find_longest_match(s, h, in_, i, inend, MAX_MATCH, &mut sublen, &mut dist, &mut leng);
 
         // Literal.
         if i + 1 <= inend {
@@ -279,7 +279,7 @@ unsafe fn get_best_lengths(s: &BlockState,
             }
 
             let new_cost: f64 = costs[j] as f64 +
-                                costmodel(k as u32, sublen[k] as u32, costcontext);
+                                costmodel(k as u32, sublen.as_ref().unwrap()[k] as u32, costcontext);
             assert!(new_cost >= 0f64);
             if new_cost < costs[j + k] as f64 {
                 assert!(k <= MAX_MATCH);
@@ -352,7 +352,7 @@ unsafe fn follow_path(s: &BlockState, in_: &[u8], instart: usize, inend: usize, 
         if length as usize >= MIN_MATCH {
             // Get the distance by recalculating longest match. The found length
             // should match the length from the path.
-            find_longest_match(s, h, in_, pos, inend, length as usize, null_mut(), &mut dist, &mut dummy_length);
+            find_longest_match(s, h, in_, pos, inend, length as usize, &mut None, &mut dist, &mut dummy_length);
             assert!(!(dummy_length != length && length > 2 && dummy_length > 2));
             verify_len_dist(in_, inend, pos, dist, length);
             store_litlen_dist(length, dist, store);
@@ -398,7 +398,7 @@ unsafe fn get_statistics(store: *const LZ77Store, stats: *mut SymbolStats) {
 /**
  * Does a single run for ZopfliLZ77Optimal. For good compression, repeated runs
  * with updated statistics should be performed.
- * 
+ *
  * s: the block state
  * in: the input data array
  * instart: where to start

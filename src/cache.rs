@@ -61,7 +61,7 @@ pub unsafe fn clean_cache(lmc: LongestMatchCache) {
 }
 
 /// Stores sublen array in the cache.
-pub unsafe fn sublen_to_cache(sublen: *const u16,
+pub unsafe fn sublen_to_cache(sublen: &[u16; 259],
                               pos: usize,
                               length: usize,
                               lmc: &LongestMatchCache) {
@@ -77,10 +77,10 @@ pub unsafe fn sublen_to_cache(sublen: *const u16,
     let mut j: usize = 0;
     let mut bestlength: u32 = 0;
     for i in 3..length + 1 {
-        if i == length || *sublen.offset(i as isize) != *sublen.offset(i as isize + 1) {
+        if i == length || sublen[i] != sublen[i + 1] {
             *cache.offset(j as isize * 3) = (i - 3) as u8;
-            *cache.offset(j as isize * 3 + 1) = (*sublen.offset(i as isize) % 256) as u8;
-            *cache.offset(j as isize * 3 + 2) = ((*sublen.offset(i as isize) >> 8) % 256) as u8;
+            *cache.offset(j as isize * 3 + 1) = (sublen[i] % 256) as u8;
+            *cache.offset(j as isize * 3 + 2) = ((sublen[i] >> 8) % 256) as u8;
             bestlength = i as u32;
             j += 1;
             if j >= CACHE_LENGTH {
@@ -105,7 +105,7 @@ pub unsafe fn sublen_to_cache(sublen: *const u16,
 pub unsafe fn cache_to_sublen(lmc: *const LongestMatchCache,
                               pos: usize,
                               length: usize,
-                              sublen: *mut u16) {
+                              sublen: &mut [u16; 259]) {
     if CACHE_LENGTH == 0 {
         return;
     }
@@ -121,7 +121,7 @@ pub unsafe fn cache_to_sublen(lmc: *const LongestMatchCache,
         let dist: u32 = *cache.offset(j as isize * 3 + 1) as u32 +
                         256 * *cache.offset(j as isize * 3 + 2) as u32;
         for i in prevlength..length + 1 {
-            *sublen.offset(i as isize) = dist as u16;
+            sublen[i as usize] = dist as u16;
         }
         if length == maxlength {
             break;
