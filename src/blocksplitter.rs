@@ -7,7 +7,6 @@
 use std::io::Write;
 use std::iter;
 use std::mem::uninitialized;
-use std::ptr::null_mut;
 
 use super::Options;
 
@@ -276,7 +275,7 @@ pub unsafe fn block_split(options: *const Options,
                           inend: usize,
                           maxblocks: usize,
                           splitpoints: &mut Vec<usize>) {
-    let s = BlockState::new(options, instart, inend, null_mut());
+    let s = BlockState::new(options, instart, inend, None);
     let mut lz77splitpoints: Vec<usize> = Vec::new();
     let mut store = LZ77Store::new();
 

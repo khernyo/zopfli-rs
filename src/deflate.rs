@@ -6,9 +6,6 @@ use std::iter;
 use std::mem::uninitialized;
 use std::ptr::null_mut;
 
-use libc::c_void;
-use libc::funcs::c95::stdlib::free;
-
 use super::Options;
 use util;
 
@@ -600,11 +597,11 @@ unsafe fn deflate_dynamic_block(options: *const Options,
 
     #[cfg(feature = "longest-match-cache")]
     unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
-        BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
+        BlockState::new(options, instart, inend, Some(LongestMatchCache::new(blocksize)))
     }
     #[cfg(not(feature = "longest-match-cache"))]
     fn create_block_state(options: *const Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
-        BlockState::new(options, instart, inend, null_mut())
+        BlockState::new(options, instart, inend, None)
     }
     let mut s = create_block_state(options, instart, inend, blocksize);
 
@@ -630,8 +627,9 @@ unsafe fn deflate_dynamic_block(options: *const Options,
 
     #[cfg(feature = "longest-match-cache")]
     unsafe fn clean_cache(s: BlockState) {
-        cache::clean_cache(s.lmc);
-        free(s.lmc as *mut c_void);
+        if let Some(lmc) = s.lmc {
+            cache::clean_cache(lmc);
+        }
     }
     #[cfg(not(feature = "longest-match-cache"))]
     fn clean_cache(_s: BlockState) { }
@@ -649,11 +647,11 @@ unsafe fn deflate_fixed_block(options: *const Options,
 
     #[cfg(feature = "longest-match-cache")]
     unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
-        BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
+        BlockState::new(options, instart, inend, Some(LongestMatchCache::new(blocksize)))
     }
     #[cfg(not(feature = "longest-match-cache"))]
     fn create_block_state(options: *const Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
-        BlockState::new(options, instart, inend, null_mut())
+        BlockState::new(options, instart, inend, None)
     }
     let mut s = create_block_state(options, instart, inend, blocksize);
 
@@ -665,8 +663,9 @@ unsafe fn deflate_fixed_block(options: *const Options,
 
     #[cfg(feature = "longest-match-cache")]
     unsafe fn clean_cache(s: BlockState) {
-        cache::clean_cache(s.lmc);
-        free(s.lmc as *mut c_void);
+        if let Some(lmc) = s.lmc {
+            cache::clean_cache(lmc);
+        }
     }
     #[cfg(not(feature = "longest-match-cache"))]
     fn clean_cache(_s: BlockState) { }
@@ -760,11 +759,11 @@ unsafe fn deflate_splitting_last(options: *const Options,
                                  out: &mut Vec<u8>) {
     #[cfg(feature = "longest-match-cache")]
     unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
-        BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
+        BlockState::new(options, instart, inend, Some(LongestMatchCache::new(blocksize)))
     }
     #[cfg(not(feature = "longest-match-cache"))]
     fn create_block_state(options: *const Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
-        BlockState::new(options, instart, inend, null_mut())
+        BlockState::new(options, instart, inend, None)
     }
     let mut s = create_block_state(options, instart, inend, inend - instart);
 
@@ -801,8 +800,9 @@ unsafe fn deflate_splitting_last(options: *const Options,
 
     #[cfg(feature = "longest-match-cache")]
     unsafe fn clean_cache(s: BlockState) {
-        cache::clean_cache(s.lmc);
-        free(s.lmc as *mut c_void);
+        if let Some(lmc) = s.lmc {
+            cache::clean_cache(lmc);
+        }
     }
     #[cfg(not(feature = "longest-match-cache"))]
     fn clean_cache(_s: BlockState) { }

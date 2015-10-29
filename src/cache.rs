@@ -22,7 +22,7 @@ pub struct LongestMatchCache {
 
 impl LongestMatchCache {
     /// Initializes the ZopfliLongestMatchCache.
-    pub unsafe fn new(blocksize: usize) -> *mut LongestMatchCache {
+    pub unsafe fn new(blocksize: usize) -> LongestMatchCache {
         let length: *mut u16 = malloc((size_of::<u16>() * blocksize) as size_t) as *mut u16;
         let dist: *mut u16 = malloc((size_of::<u16>() * blocksize) as size_t) as *mut u16;
 
@@ -45,32 +45,31 @@ impl LongestMatchCache {
         for i in 0..sublen_size {
             *sublen.offset(i as isize) = 0;
         }
-        let lmc: *mut LongestMatchCache =
-            malloc(size_of::<LongestMatchCache>() as size_t) as *mut LongestMatchCache;
-        (*lmc).length = length;
-        (*lmc).dist = dist;
-        (*lmc).sublen = sublen;
-        lmc
+        LongestMatchCache {
+            length: length,
+            dist: dist,
+            sublen: sublen,
+        }
     }
 }
 
 /// Frees up the memory of the ZopfliLongestMatchCache.
-pub unsafe fn clean_cache(lmc: *mut LongestMatchCache) {
-    free((*lmc).length as *mut c_void);
-    free((*lmc).dist as *mut c_void);
-    free((*lmc).sublen as *mut c_void);
+pub unsafe fn clean_cache(lmc: LongestMatchCache) {
+    free(lmc.length as *mut c_void);
+    free(lmc.dist as *mut c_void);
+    free(lmc.sublen as *mut c_void);
 }
 
 /// Stores sublen array in the cache.
 pub unsafe fn sublen_to_cache(sublen: *const u16,
                               pos: usize,
                               length: usize,
-                              lmc: *mut LongestMatchCache) {
+                              lmc: &LongestMatchCache) {
     if CACHE_LENGTH == 0 {
         return;
     }
 
-    let cache: *mut u8 = (*lmc).sublen.offset((CACHE_LENGTH * pos * 3) as isize);
+    let cache: *mut u8 = lmc.sublen.offset((CACHE_LENGTH * pos * 3) as isize);
     if length < 3 {
         return;
     }

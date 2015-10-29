@@ -56,7 +56,7 @@ pub struct BlockState {
 
     /// Cache for length/distance pairs found so far.
     #[cfg(feature = "longest-match-cache")]
-    pub lmc: *mut LongestMatchCache,
+    pub lmc: Option<LongestMatchCache>,
 
     /// The start (inclusive) and end (not inclusive) of the current block.
     pub blockstart: usize,
@@ -68,7 +68,7 @@ impl BlockState {
     pub fn new(options: *const Options,
                blockstart: usize,
                blockend: usize,
-               lmc: *mut LongestMatchCache)
+               lmc: Option<LongestMatchCache>)
                -> BlockState {
         BlockState {
             options: options,
@@ -82,7 +82,7 @@ impl BlockState {
     pub fn new(options: *const Options,
                blockstart: usize,
                blockend: usize,
-               _lmc: *mut ())
+               _lmc: Option<()>)
                -> BlockState {
         BlockState {
             options: options,
@@ -224,30 +224,34 @@ unsafe fn try_get_from_longest_match_cache(s: &BlockState,
 
     // Length > 0 and dist 0 is invalid combination, which indicates on purpose
     // that this cache value is not filled in yet.
-    let cache_available: bool = s.lmc != null_mut() && (*(*s.lmc).length.offset(lmcpos) == 0 || *(*s.lmc).dist.offset(lmcpos) != 0);
-    let limit_of_for_cache: bool = cache_available && (*limit == MAX_MATCH || *(*s.lmc).length.offset(lmcpos) <= *limit as u16 || (sublen != null_mut() && cache::max_cached_sublen(s.lmc, lmcpos as usize, *(*s.lmc).length.offset(lmcpos) as usize) >= *limit as u32));
+    let cache_available = s.lmc.as_ref().map_or(
+        false,
+        |lmc| *lmc.length.offset(lmcpos) == 0 || *lmc.dist.offset(lmcpos) != 0);
+    let limit_of_for_cache: bool = cache_available && s.lmc.as_ref()
+        .map(|lmc| *limit == MAX_MATCH || *lmc.length.offset(lmcpos) <= *limit as u16 || (sublen != null_mut() && cache::max_cached_sublen(lmc, lmcpos as usize, *lmc.length.offset(lmcpos) as usize) >= *limit as u32)).unwrap();
 
-    if s.lmc != null_mut() && limit_of_for_cache && cache_available {
-        if sublen == null_mut() || *(*s.lmc).length.offset(lmcpos) <= cache::max_cached_sublen(s.lmc, lmcpos as usize, *(*s.lmc).length.offset(lmcpos) as usize) as u16 {
-            *length = *(*s.lmc).length.offset(lmcpos);
+    if s.lmc.is_some() && limit_of_for_cache && cache_available {
+        let lmc = s.lmc.as_ref().unwrap();
+        if sublen == null_mut() || *lmc.length.offset(lmcpos) <= cache::max_cached_sublen(lmc, lmcpos as usize, *lmc.length.offset(lmcpos) as usize) as u16 {
+            *length = *lmc.length.offset(lmcpos);
             if *length > *limit as u16 {
                 *length = *limit as u16;
             }
             if sublen != null_mut() {
-                cache::cache_to_sublen(s.lmc, lmcpos as usize, *length as usize, sublen);
+                cache::cache_to_sublen(lmc, lmcpos as usize, *length as usize, sublen);
                 *distance = *sublen.offset(*length as isize);
                 if *limit == MAX_MATCH && *length >= MIN_MATCH as u16 {
                     assert_eq!(*sublen.offset(*length as isize),
-                               *(*s.lmc).dist.offset(lmcpos));
+                               *lmc.dist.offset(lmcpos));
                 }
             } else {
-                *distance = *(*s.lmc).dist.offset(lmcpos);
+                *distance = *lmc.dist.offset(lmcpos);
             }
             return true;
         }
         // Can't use much of the cache, since the "sublens" need to be calculated,
         // but at  least we already know when to stop.
-        *limit = *(*s.lmc).length.offset(lmcpos) as usize;
+        *limit = *lmc.length.offset(lmcpos) as usize;
     }
     false
 }
@@ -276,17 +280,18 @@ unsafe fn store_in_longest_match_cache(s: &BlockState,
 
     // Length > 0 and dist 0 is invalid combination, which indicates on purpose
     // that this cache value is not filled in yet.
-    let cache_available: bool = s.lmc != null_mut() &&
-                                (*(*s.lmc).length.offset(lmcpos) == 0 ||
-                                 *(*s.lmc).dist.offset(lmcpos) != 0);
+    let cache_available = s.lmc.as_ref().map_or(
+        false,
+        |lmc| *lmc.length.offset(lmcpos) == 0 || *lmc.dist.offset(lmcpos) != 0);
 
-    if s.lmc != null_mut() && limit == MAX_MATCH && !sublen.is_null() && !cache_available {
-        assert_eq!(*(*s.lmc).length.offset(lmcpos), 1);
-        assert_eq!(*(*s.lmc).dist.offset(lmcpos), 0);
-        *(*s.lmc).dist.offset(lmcpos) = if length < MIN_MATCH as u16 { 0 } else { distance };
-        *(*s.lmc).length.offset(lmcpos) = if length < MIN_MATCH as u16 { 0 } else { length };
-        assert!(!(*(*s.lmc).length.offset(lmcpos) == 1 && *(*s.lmc).dist.offset(lmcpos) == 0));
-        cache::sublen_to_cache(sublen, lmcpos as usize, length as usize, s.lmc);
+    if s.lmc.is_some() && limit == MAX_MATCH && !sublen.is_null() && !cache_available {
+        let lmc = s.lmc.as_ref().unwrap();
+        assert_eq!(*lmc.length.offset(lmcpos), 1);
+        assert_eq!(*lmc.dist.offset(lmcpos), 0);
+        *lmc.dist.offset(lmcpos) = if length < MIN_MATCH as u16 { 0 } else { distance };
+        *lmc.length.offset(lmcpos) = if length < MIN_MATCH as u16 { 0 } else { length };
+        assert!(!(*lmc.length.offset(lmcpos) == 1 && *lmc.dist.offset(lmcpos) == 0));
+        cache::sublen_to_cache(sublen, lmcpos as usize, length as usize, lmc);
     }
 }
 
