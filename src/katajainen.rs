@@ -47,13 +47,13 @@ unsafe fn init_node(weight: usize, count: i32, tail: *mut Node, node: *mut Node)
  */
 unsafe fn get_free_node(lists: Option<&Vec<[*mut Node; 2]>>,
                         maxbits: i32,
-                        pool: *mut NodePool)
+                        pool: &mut NodePool)
                         -> *mut Node {
     loop {
-        if (*pool).next >= (*pool).nodes.offset((*pool).size as isize) {
+        if pool.next >= pool.nodes.offset(pool.size as isize) {
             // Garbage collection
-            for i in 0..(*pool).size {
-                (*(*pool).nodes.offset(i as isize)).in_use = false;
+            for i in 0..pool.size {
+                (*pool.nodes.offset(i as isize)).in_use = false;
             }
             if let Some(lists) = lists {
                 for i in 0..maxbits * 2 {
@@ -64,15 +64,15 @@ unsafe fn get_free_node(lists: Option<&Vec<[*mut Node; 2]>>,
                     }
                 }
             }
-            (*pool).next = (*pool).nodes;
+            pool.next = pool.nodes;
         }
-        if !(*(*pool).next).in_use {
+        if !(*pool.next).in_use {
             break;
         }
-        (*pool).next = (*pool).next.offset(1);
+        pool.next = pool.next.offset(1);
     }
-    let free_node = (*pool).next;
-    (*pool).next = (*pool).next.offset(1);
+    let free_node = pool.next;
+    pool.next = pool.next.offset(1);
     free_node
 }
 
@@ -93,7 +93,7 @@ unsafe fn boundary_pm(lists: &mut Vec<[*mut Node; 2]>,
                       maxbits: i32,
                       leaves: &[Node],
                       numsymbols: i32,
-                      pool: *mut NodePool,
+                      pool: &mut NodePool,
                       index: i32,
                       is_final: bool) {
     let lastcount = (*lists[index as usize][1]).count; // Count of last chain of list.
@@ -140,7 +140,7 @@ unsafe fn boundary_pm(lists: &mut Vec<[*mut Node; 2]>,
 }
 
 /// Initializes each list with as lookahead chains the two leaves with lowest weights.
-unsafe fn init_lists(pool: *mut NodePool,
+unsafe fn init_lists(pool: &mut NodePool,
                      leaves: &[Node],
                      maxbits: i32) -> Vec<[*mut Node; 2]> {
     let node0 = get_free_node(None, maxbits, pool);
