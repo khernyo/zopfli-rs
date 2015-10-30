@@ -7,7 +7,6 @@ use std::mem;
 use std::ptr::{null, null_mut};
 
 use libc::{c_void, size_t};
-use libc::funcs::c95::stdlib::{free, malloc};
 
 /// Nodes forming chains. Also used to represent leaves.
 struct Node {
@@ -24,13 +23,29 @@ struct Node {
 /// Memory pool for nodes.
 struct NodePool {
     /// The pool.
-    nodes: *mut Node,
-    /// Pointer to a possibly free node in the pool.
-    next: *mut Node,
+    nodes: Vec<Node>,
+    /// Index of a possibly free node in the pool.
+    next: u32,
     /// Size of the memory pool.
     size: u32,
 }
 
+impl NodePool {
+    fn new(pool_size: u32) -> NodePool {
+        NodePool {
+            nodes: (0..pool_size).map(|_| {
+                Node {
+                    weight: 0,
+                    tail: null_mut(),
+                    count: 0,
+                    in_use: false,
+                }
+            }).collect(),
+            next: 0,
+            size: pool_size,
+        }
+    }
+}
 /// Initializes a chain node with the given values and marks it as in use.
 unsafe fn init_node(weight: usize, count: i32, tail: *mut Node, node: *mut Node) {
     (*node).weight = weight;
@@ -50,10 +65,10 @@ unsafe fn get_free_node(lists: Option<&Vec<[*mut Node; 2]>>,
                         pool: &mut NodePool)
                         -> *mut Node {
     loop {
-        if pool.next >= pool.nodes.offset(pool.size as isize) {
+        if pool.next >= pool.size {
             // Garbage collection
             for i in 0..pool.size {
-                (*pool.nodes.offset(i as isize)).in_use = false;
+                pool.nodes[i as usize].in_use = false;
             }
             if let Some(lists) = lists {
                 for i in 0..maxbits * 2 {
@@ -64,15 +79,15 @@ unsafe fn get_free_node(lists: Option<&Vec<[*mut Node; 2]>>,
                     }
                 }
             }
-            pool.next = pool.nodes;
+            pool.next = 0;
         }
-        if !(*pool.next).in_use {
+        if !pool.nodes[pool.next as usize].in_use {
             break;
         }
-        pool.next = pool.next.offset(1);
+        pool.next += 1;
     }
-    let free_node = pool.next;
-    pool.next = pool.next.offset(1);
+    let free_node = &mut pool.nodes[pool.next as usize];
+    pool.next += 1;
     free_node
 }
 
@@ -229,16 +244,7 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize,
           leaf_comparator);
 
     // Initialize node memory pool.
-    let pool_size = 2 * maxbits * (maxbits + 1);
-    let pool_nodes = malloc((pool_size as usize * mem::size_of::<Node>()) as size_t) as *mut Node;
-    let mut pool = NodePool {
-        size: pool_size as u32,
-        nodes: pool_nodes,
-        next: pool_nodes,
-    };
-    for i in 0..pool.size {
-        (*pool.nodes.offset(i as isize)).in_use = false;
-    }
+    let mut pool = NodePool::new(2 * maxbits as u32 * (maxbits as u32 + 1));
 
     // Array of lists of chains. Each list requires only two lookahead chains at
     // a time, so each list is a array of two Node*'s.
@@ -259,7 +265,6 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize,
     }
 
     extract_bit_lengths(lists[maxbits as usize - 1][1], &leaves, bitlengths);
-    free(pool.nodes as *mut c_void);
     false // OK.
 }
 
