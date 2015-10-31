@@ -6,7 +6,6 @@
 
 use std::io::Write;
 use std::iter;
-use std::mem::uninitialized;
 
 use super::Options;
 
@@ -16,7 +15,7 @@ use util;
 
 /// Finds minimum of function f(i) where is is of type size_t, f(i) is of type
 /// double, i is in range start-end (excluding end).
-unsafe fn find_minimum<F>(f: F, start: usize, end: usize) -> usize
+fn find_minimum<F>(f: F, start: usize, end: usize) -> usize
     where F: Fn(usize) -> f64
 {
 
@@ -37,8 +36,8 @@ unsafe fn find_minimum<F>(f: F, start: usize, end: usize) -> usize
         // Good value: 9.
         const NUM: usize = 9;
 
-        let mut p: [usize; NUM] = uninitialized();
-        let mut vp: [f64; NUM] = uninitialized();
+        let mut p: [usize; NUM] = [0; NUM];
+        let mut vp: [f64; NUM] = [0f64; NUM];
         let mut lastbest: f64 = util::LARGE_FLOAT;
         let mut pos = start;
 
@@ -104,7 +103,7 @@ unsafe fn split_cost(i: usize, c: &SplitCostContext) -> f64 {
     estimate_cost(c.litlens, c.dists, c.start, i) + estimate_cost(c.litlens, c.dists, i, c.end)
 }
 
-unsafe fn add_sorted(value: usize, out: &mut Vec<usize>) {
+fn add_sorted(value: usize, out: &mut Vec<usize>) {
     out.push(value);
     let mut i: usize = 0;
     while i + 1 < out.len() {

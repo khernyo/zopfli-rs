@@ -18,7 +18,7 @@ pub struct LongestMatchCache {
 
 impl LongestMatchCache {
     /// Initializes the ZopfliLongestMatchCache.
-    pub unsafe fn new(blocksize: usize) -> LongestMatchCache {
+    pub fn new(blocksize: usize) -> LongestMatchCache {
         // Rather large amount of memory.
         let sublen_size = CACHE_LENGTH * 3 * blocksize;
 
