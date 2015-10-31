@@ -50,8 +50,8 @@ impl LZ77Store {
 /// Some state information for compressing a block.
 /// This is currently a bit under-used (with mainly only the longest match cache),
 /// but is kept for easy future expansion.
-pub struct BlockState {
-    pub options: *const Options,
+pub struct BlockState<'a> {
+    pub options: &'a Options,
 
     /// Cache for length/distance pairs found so far.
     #[cfg(feature = "longest-match-cache")]
@@ -62,13 +62,13 @@ pub struct BlockState {
     pub blockend: usize,
 }
 
-impl BlockState {
+impl<'a> BlockState<'a> {
     #[cfg(feature = "longest-match-cache")]
-    pub fn new(options: *const Options,
+    pub fn new(options: &'a Options,
                blockstart: usize,
                blockend: usize,
                lmc: Option<LongestMatchCache>)
-               -> BlockState {
+               -> BlockState<'a> {
         BlockState {
             options: options,
             blockstart: blockstart,
@@ -78,11 +78,11 @@ impl BlockState {
     }
 
     #[cfg(not(feature = "longest-match-cache"))]
-    pub fn new(options: *const Options,
+    pub fn new(options: &'a Options,
                blockstart: usize,
                blockend: usize,
                _lmc: Option<()>)
-               -> BlockState {
+               -> BlockState<'a> {
         BlockState {
             options: options,
             blockstart: blockstart,

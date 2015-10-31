@@ -66,14 +66,14 @@ pub enum Format {
 /**
  * Compresses according to the given output format and appends the result to the
  * output.
- * 
+ *
  * options: global program options
  * output_type: the output format to use
  * out: pointer to the dynamic output array to which the result is appended. Must
  *   be freed after use
  * outsize: pointer to the dynamic output array size
  */
-pub unsafe fn compress(options: *const Options, output_type: Format, input: &[u8]) -> Vec<u8> {
+pub unsafe fn compress(options: &Options, output_type: Format, input: &[u8]) -> Vec<u8> {
     match output_type {
         Format::GZIP    => gzip_container::compress(options, input),
         Format::ZLIB    => zlib_container::compress(options, input),

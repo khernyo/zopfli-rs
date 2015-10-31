@@ -195,7 +195,7 @@ unsafe fn find_largest_splittable_block(llsize: usize,
 /// dists: lz77 distances
 /// llsize: size of litlens and dists
 /// maxblocks: set a limit to the amount of blocks. Set to 0 to mean no limit.
-pub unsafe fn block_split_lz77(options: *const Options,
+pub unsafe fn block_split_lz77(options: &Options,
                                litlens: &mut Vec<u16>,
                                dists: &mut Vec<u16>,
                                llsize: usize,
@@ -269,7 +269,7 @@ pub unsafe fn block_split_lz77(options: *const Options,
  * npoints: pointer to amount of splitpoints, for the dynamic array. The amount of
  *   blocks is the amount of splitpoitns + 1.
  */
-pub unsafe fn block_split(options: *const Options,
+pub unsafe fn block_split(options: &Options,
                           in_: &[u8],
                           instart: usize,
                           inend: usize,

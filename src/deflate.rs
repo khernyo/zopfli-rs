@@ -530,7 +530,7 @@ pub unsafe fn calculate_block_size(litlens: &Vec<u16>,
  * out: dynamic output array to append to
  * outsize: dynamic output array size
  */
-unsafe fn add_lz77_block(options: *const Options,
+unsafe fn add_lz77_block(options: &Options,
                          btype: i32,
                          is_final: bool,
                          litlens: &Vec<u16>,
@@ -584,7 +584,7 @@ unsafe fn add_lz77_block(options: *const Options,
     }
 }
 
-unsafe fn deflate_dynamic_block(options: *const Options,
+unsafe fn deflate_dynamic_block(options: &Options,
                                 is_final: bool,
                                 in_: &[u8],
                                 instart: usize,
@@ -594,11 +594,11 @@ unsafe fn deflate_dynamic_block(options: *const Options,
     let blocksize: usize = inend - instart;
 
     #[cfg(feature = "longest-match-cache")]
-    unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
+    unsafe fn create_block_state(options: &Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
         BlockState::new(options, instart, inend, Some(LongestMatchCache::new(blocksize)))
     }
     #[cfg(not(feature = "longest-match-cache"))]
-    fn create_block_state(options: *const Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
+    fn create_block_state(options: &Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
         BlockState::new(options, instart, inend, None)
     }
     let mut s = create_block_state(options, instart, inend, blocksize);
@@ -624,7 +624,7 @@ unsafe fn deflate_dynamic_block(options: *const Options,
     add_lz77_block(s.options, btype, is_final, &store.litlens, &store.dists, 0, store.litlens.len(), blocksize, bp, out);
 }
 
-unsafe fn deflate_fixed_block(options: *const Options,
+unsafe fn deflate_fixed_block(options: &Options,
                               is_final: bool,
                               in_: &[u8],
                               instart: usize,
@@ -634,11 +634,11 @@ unsafe fn deflate_fixed_block(options: *const Options,
     let blocksize: usize = inend - instart;
 
     #[cfg(feature = "longest-match-cache")]
-    unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
+    unsafe fn create_block_state(options: &Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
         BlockState::new(options, instart, inend, Some(LongestMatchCache::new(blocksize)))
     }
     #[cfg(not(feature = "longest-match-cache"))]
-    fn create_block_state(options: *const Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
+    fn create_block_state(options: &Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
         BlockState::new(options, instart, inend, None)
     }
     let mut s = create_block_state(options, instart, inend, blocksize);
@@ -650,7 +650,7 @@ unsafe fn deflate_fixed_block(options: *const Options,
     add_lz77_block(s.options, 1, is_final, &store.litlens, &store.dists, 0, store.litlens.len(), blocksize, bp, out);
 }
 
-unsafe fn deflate_non_compressed_block(_options: *const Options,
+unsafe fn deflate_non_compressed_block(_options: &Options,
                                        is_final: bool,
                                        in_: &[u8],
                                        instart: usize,
@@ -679,7 +679,7 @@ unsafe fn deflate_non_compressed_block(_options: *const Options,
     }
 }
 
-unsafe fn deflate_block(options: *const Options,
+unsafe fn deflate_block(options: &Options,
                         btype: i32,
                         is_final: bool,
                         in_: &[u8],
@@ -699,7 +699,7 @@ unsafe fn deflate_block(options: *const Options,
 /// Does squeeze strategy where first block splitting is done, then each block is
 /// squeezed.
 /// Parameters: see description of the ZopfliDeflate function.
-unsafe fn deflate_splitting_first(options: *const Options,
+unsafe fn deflate_splitting_first(options: &Options,
                                   btype: i32,
                                   is_final: bool,
                                   in_: &[u8],
@@ -727,7 +727,7 @@ unsafe fn deflate_splitting_first(options: *const Options,
 /// Does squeeze strategy where first the best possible lz77 is done, and then based
 /// on that data, block splitting is done.
 /// Parameters: see description of the ZopfliDeflate function.
-unsafe fn deflate_splitting_last(options: *const Options,
+unsafe fn deflate_splitting_last(options: &Options,
                                  btype: i32,
                                  is_final: bool,
                                  in_: &[u8],
@@ -736,11 +736,11 @@ unsafe fn deflate_splitting_last(options: *const Options,
                                  bp: *mut u8,
                                  out: &mut Vec<u8>) {
     #[cfg(feature = "longest-match-cache")]
-    unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
+    unsafe fn create_block_state(options: &Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
         BlockState::new(options, instart, inend, Some(LongestMatchCache::new(blocksize)))
     }
     #[cfg(not(feature = "longest-match-cache"))]
-    fn create_block_state(options: *const Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
+    fn create_block_state(options: &Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
         BlockState::new(options, instart, inend, None)
     }
     let mut s = create_block_state(options, instart, inend, inend - instart);
@@ -790,7 +790,7 @@ unsafe fn deflate_splitting_last(options: *const Options,
  * This function will usually output multiple deflate blocks. If final is 1, then
  * the final bit will be set on the last block.
 */
-unsafe fn deflate_part(options: *const Options,
+unsafe fn deflate_part(options: &Options,
                        btype: i32,
                        is_final: bool,
                        input: &[u8],
@@ -832,7 +832,7 @@ unsafe fn deflate_part(options: *const Options,
  *   be freed after use.
  * outsize: pointer to the dynamic output array size.
  */
-pub unsafe fn deflate(options: *const Options,
+pub unsafe fn deflate(options: &Options,
                       btype: i32,
                       is_final: bool,
                       input: &[u8],

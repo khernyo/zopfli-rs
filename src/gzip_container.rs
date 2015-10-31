@@ -56,7 +56,7 @@ unsafe fn crc(buf: &[u8]) -> u64 {
  *   be freed after use.
  * outsize: pointer to the dynamic output array size.
  */
-pub unsafe fn compress(options: *const Options, input: &[u8]) -> Vec<u8> {
+pub unsafe fn compress(options: &Options, input: &[u8]) -> Vec<u8> {
     let crcvalue: u64 = crc(input);
     let mut bp: u8 = 0;
 
