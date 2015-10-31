@@ -36,31 +36,31 @@ pub unsafe fn lengths_to_symbols(lengths: *const u32, n: usize, maxbits: u32, sy
     }
 }
 
-pub unsafe fn calculate_entropy(count: *const usize, n: usize, bitlengths: *mut f64) {
+pub fn calculate_entropy(count: &[usize], bitlengths: &mut [f64]) {
     const K_INV_LOG2: f64 = 1.4426950408889;  // 1.0 / log(2.0)
     let mut sum = 0;
-    for i in 0..n {
-        sum += *count.offset(i as isize);
+    for i in 0..count.len() {
+        sum += count[i];
     }
-    let log2sum = (if sum == 0 { (n as f64).ln() } else { (sum as f64).ln() }) * K_INV_LOG2;
-    for i in 0..n {
+    let log2sum = (if sum == 0 { (count.len() as f64).ln() } else { (sum as f64).ln() }) * K_INV_LOG2;
+    for i in 0..count.len() {
         // When the count of the symbol is 0, but its cost is requested anyway, it
         // means the symbol will appear at least once anyway, so give it the cost as if
         // its count is 1.
-        if *count.offset(i as isize) == 0 {
-            *bitlengths.offset(i as isize) = log2sum;
+        if count[i] == 0 {
+            bitlengths[i] = log2sum;
         } else {
-            *bitlengths.offset(i as isize) = log2sum - (*count.offset(i as isize) as f64).ln() * K_INV_LOG2;
+            bitlengths[i] = log2sum - (count[i] as f64).ln() * K_INV_LOG2;
         }
         // Depending on compiler and architecture, the above subtraction of two
         // floating point numbers may give a negative result very close to zero
         // instead of zero (e.g. -5.973954e-17 with gcc 4.1.2 on Ubuntu 11.4). Clamp
         // it to zero. These floating point imprecisions do not affect the cost model
         // significantly so this is ok.
-        if *bitlengths.offset(i as isize) < 0f64 && *bitlengths.offset(i as isize) > -1e-5 {
-            *bitlengths.offset(i as isize) = 0f64;
+        if bitlengths[i] < 0f64 && bitlengths[i] > -1e-5 {
+            bitlengths[i] = 0f64;
         }
-        assert!(*bitlengths.offset(i as isize) >= 0f64, "{} >= {}", *bitlengths.offset(i as isize), 0);
+        assert!(bitlengths[i] >= 0f64, "{} >= {}", bitlengths[i], 0);
     }
 }
 

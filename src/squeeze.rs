@@ -376,8 +376,8 @@ unsafe fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usi
 
 /// Calculates the entropy of the statistics
 unsafe fn calculate_statistics(stats: *mut SymbolStats) {
-    calculate_entropy((*stats).litlens.as_ptr(), 288, (*stats).ll_symbols.as_mut_ptr());
-    calculate_entropy((*stats).dists.as_ptr(), 32, (*stats).d_symbols.as_mut_ptr());
+    calculate_entropy(&(*stats).litlens, &mut (*stats).ll_symbols);
+    calculate_entropy(&(*stats).dists, &mut (*stats).d_symbols);
 }
 
 /// Appends the symbol statistics from the store.
