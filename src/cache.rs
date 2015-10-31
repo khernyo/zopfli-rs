@@ -2,11 +2,7 @@
 
 //! The cache that speeds up ZopfliFindLongestMatch of lz77.c.
 
-use std::mem::size_of;
-use std::ptr::null_mut;
-
-use libc::funcs::c95::stdlib::{free, malloc};
-use libc::{c_void, size_t};
+use std::iter;
 
 use util::CACHE_LENGTH;
 
@@ -15,61 +11,37 @@ use util::CACHE_LENGTH;
 /// same position. Uses large amounts of memory, since it has to remember the distance
 /// belonging to every possible shorter-than-the-best length (the so called "sublen" array).
 pub struct LongestMatchCache {
-    pub length: *mut u16,
-    pub dist: *mut u16,
-    sublen: *mut u8,
+    pub length: Vec<u16>,
+    pub dist: Vec<u16>,
+    sublen: Vec<u8>,
 }
 
 impl LongestMatchCache {
     /// Initializes the ZopfliLongestMatchCache.
     pub unsafe fn new(blocksize: usize) -> LongestMatchCache {
-        let length: *mut u16 = malloc((size_of::<u16>() * blocksize) as size_t) as *mut u16;
-        let dist: *mut u16 = malloc((size_of::<u16>() * blocksize) as size_t) as *mut u16;
-
         // Rather large amount of memory.
-        let sublen_size = (CACHE_LENGTH * 3 * blocksize) as size_t;
-        let sublen: *mut u8 = malloc(sublen_size) as *mut u8;
-        if sublen == null_mut() {
-            panic!("Error: Out of memory. Tried allocating {} bytes of memory.",
-                   sublen_size);
-        }
+        let sublen_size = CACHE_LENGTH * 3 * blocksize;
 
         // length > 0 and dist 0 is invalid combination, which indicates on purpose
         // that this cache value is not filled in yet.
-        for i in 0..blocksize {
-            *length.offset(i as isize) = 1;
-        }
-        for i in 0..blocksize {
-            *dist.offset(i as isize) = 0;
-        }
-        for i in 0..sublen_size {
-            *sublen.offset(i as isize) = 0;
-        }
         LongestMatchCache {
-            length: length,
-            dist: dist,
-            sublen: sublen,
+            length: iter::repeat(1).take(blocksize).collect(),
+            dist: iter::repeat(0).take(blocksize).collect(),
+            sublen: iter::repeat(0).take(sublen_size).collect(),
         }
     }
-}
-
-/// Frees up the memory of the ZopfliLongestMatchCache.
-pub unsafe fn clean_cache(lmc: LongestMatchCache) {
-    free(lmc.length as *mut c_void);
-    free(lmc.dist as *mut c_void);
-    free(lmc.sublen as *mut c_void);
 }
 
 /// Stores sublen array in the cache.
 pub unsafe fn sublen_to_cache(sublen: &[u16; 259],
                               pos: usize,
                               length: usize,
-                              lmc: &LongestMatchCache) {
+                              lmc: &mut LongestMatchCache) {
     if CACHE_LENGTH == 0 {
         return;
     }
 
-    let cache: *mut u8 = lmc.sublen.offset((CACHE_LENGTH * pos * 3) as isize);
+    let cache: *mut u8 = &mut lmc.sublen[CACHE_LENGTH * pos * 3];
     if length < 3 {
         return;
     }
@@ -102,7 +74,7 @@ pub unsafe fn sublen_to_cache(sublen: &[u16; 259],
 }
 
 /// Extracts sublen array from the cache.
-pub unsafe fn cache_to_sublen(lmc: *const LongestMatchCache,
+pub unsafe fn cache_to_sublen(lmc: *mut LongestMatchCache,
                               pos: usize,
                               length: usize,
                               sublen: &mut [u16; 259]) {
@@ -113,7 +85,7 @@ pub unsafe fn cache_to_sublen(lmc: *const LongestMatchCache,
     if length < 3 {
         return;
     }
-    let cache: *mut u8 = (*lmc).sublen.offset((CACHE_LENGTH * pos * 3) as isize);
+    let cache: *mut u8 = &mut (*lmc).sublen[CACHE_LENGTH * pos * 3];
     let maxlength: u32 = max_cached_sublen(lmc, pos, length);
     let mut prevlength: u32 = 0;
     for j in 0..CACHE_LENGTH {
@@ -135,7 +107,7 @@ pub unsafe fn max_cached_sublen(lmc: *const LongestMatchCache, pos: usize, _leng
     if CACHE_LENGTH == 0 {
         return 0;
     }
-    let cache: *const u8 = (*lmc).sublen.offset((CACHE_LENGTH * pos * 3) as isize);
+    let cache: *const u8 = &(*lmc).sublen[CACHE_LENGTH * pos * 3];
     if *cache.offset(1) == 0 && *cache.offset(2) == 0 {
         // No sublen cached.
         return 0;

@@ -195,7 +195,7 @@ unsafe fn get_match(scan: *const u8,
 }
 
 #[cfg(not(feature = "longest-match-cache"))]
-fn try_get_from_longest_match_cache(_s: &BlockState,
+fn try_get_from_longest_match_cache(_s: &mut BlockState,
                                     _pos: usize,
                                     _limit: *mut usize,
                                     _sublen: &mut Option<[u16; 259]>,
@@ -210,7 +210,7 @@ fn try_get_from_longest_match_cache(_s: &BlockState,
 /// Updates the limit value to a smaller one if possible with more limited
 /// information from the cache.
 #[cfg(feature = "longest-match-cache")]
-unsafe fn try_get_from_longest_match_cache(s: &BlockState,
+unsafe fn try_get_from_longest_match_cache(s: &mut BlockState,
                                            pos: usize,
                                            limit: *mut usize,
                                            sublen: &mut Option<[u16; 259]>,
@@ -219,20 +219,20 @@ unsafe fn try_get_from_longest_match_cache(s: &BlockState,
                                            -> bool {
     // The LMC cache starts at the beginning of the block rather than the
     // beginning of the whole array.
-    let lmcpos: isize = pos as isize - s.blockstart as isize;
+    let lmcpos: usize = pos - s.blockstart;
 
     // Length > 0 and dist 0 is invalid combination, which indicates on purpose
     // that this cache value is not filled in yet.
     let cache_available = s.lmc.as_ref().map_or(
         false,
-        |lmc| *lmc.length.offset(lmcpos) == 0 || *lmc.dist.offset(lmcpos) != 0);
+        |lmc| lmc.length[lmcpos] == 0 || lmc.dist[lmcpos] != 0);
     let limit_of_for_cache: bool = cache_available && s.lmc.as_ref()
-        .map(|lmc| *limit == MAX_MATCH || *lmc.length.offset(lmcpos) <= *limit as u16 || (sublen.is_some() && cache::max_cached_sublen(lmc, lmcpos as usize, *lmc.length.offset(lmcpos) as usize) >= *limit as u32)).unwrap();
+        .map(|lmc| *limit == MAX_MATCH || lmc.length[lmcpos] <= *limit as u16 || (sublen.is_some() && cache::max_cached_sublen(lmc, lmcpos as usize, lmc.length[lmcpos] as usize) >= *limit as u32)).unwrap();
 
     if s.lmc.is_some() && limit_of_for_cache && cache_available {
-        let lmc = s.lmc.as_ref().unwrap();
-        if sublen.is_none() || *lmc.length.offset(lmcpos) <= cache::max_cached_sublen(lmc, lmcpos as usize, *lmc.length.offset(lmcpos) as usize) as u16 {
-            *length = *lmc.length.offset(lmcpos);
+        let lmc = s.lmc.as_mut().unwrap();
+        if sublen.is_none() || lmc.length[lmcpos] <= cache::max_cached_sublen(lmc, lmcpos as usize, lmc.length[lmcpos] as usize) as u16 {
+            *length = lmc.length[lmcpos];
             if *length > *limit as u16 {
                 *length = *limit as u16;
             }
@@ -241,16 +241,16 @@ unsafe fn try_get_from_longest_match_cache(s: &BlockState,
                     cache::cache_to_sublen(lmc, lmcpos as usize, *length as usize, sublen);
                     *distance = sublen[*length as usize];
                     if *limit == MAX_MATCH && *length >= MIN_MATCH as u16 {
-                        assert_eq!(sublen[*length as usize], *lmc.dist.offset(lmcpos));
+                        assert_eq!(sublen[*length as usize], lmc.dist[lmcpos]);
                     }
                 }
-                &mut None => *distance = *lmc.dist.offset(lmcpos),
+                &mut None => *distance = lmc.dist[lmcpos],
             }
             return true;
         }
         // Can't use much of the cache, since the "sublens" need to be calculated,
         // but at  least we already know when to stop.
-        *limit = *lmc.length.offset(lmcpos) as usize;
+        *limit = lmc.length[lmcpos] as usize;
     }
     false
 }
@@ -267,7 +267,7 @@ fn store_in_longest_match_cache(_s: &BlockState,
 /// Stores the found sublen, distance and length in the longest match cache, if
 /// possible.
 #[cfg(feature = "longest-match-cache")]
-unsafe fn store_in_longest_match_cache(s: &BlockState,
+unsafe fn store_in_longest_match_cache(s: &mut BlockState,
                                        pos: usize,
                                        limit: usize,
                                        sublen: &Option<[u16; 259]>,
@@ -275,21 +275,21 @@ unsafe fn store_in_longest_match_cache(s: &BlockState,
                                        length: u16) {
     // The LMC cache starts at the beginning of the block rather than the
     // beginning of the whole array.
-    let lmcpos: isize = pos as isize - s.blockstart as isize;
+    let lmcpos: usize = pos - s.blockstart;
 
     // Length > 0 and dist 0 is invalid combination, which indicates on purpose
     // that this cache value is not filled in yet.
     let cache_available = s.lmc.as_ref().map_or(
         false,
-        |lmc| *lmc.length.offset(lmcpos) == 0 || *lmc.dist.offset(lmcpos) != 0);
+        |lmc| lmc.length[lmcpos] == 0 || lmc.dist[lmcpos] != 0);
 
     if s.lmc.is_some() && limit == MAX_MATCH && sublen.is_some() && !cache_available {
-        let lmc = s.lmc.as_ref().unwrap();
-        assert_eq!(*lmc.length.offset(lmcpos), 1);
-        assert_eq!(*lmc.dist.offset(lmcpos), 0);
-        *lmc.dist.offset(lmcpos) = if length < MIN_MATCH as u16 { 0 } else { distance };
-        *lmc.length.offset(lmcpos) = if length < MIN_MATCH as u16 { 0 } else { length };
-        assert!(!(*lmc.length.offset(lmcpos) == 1 && *lmc.dist.offset(lmcpos) == 0));
+        let lmc = s.lmc.as_mut().unwrap();
+        assert_eq!(lmc.length[lmcpos], 1);
+        assert_eq!(lmc.dist[lmcpos], 0);
+        lmc.dist[lmcpos] = if length < MIN_MATCH as u16 { 0 } else { distance };
+        lmc.length[lmcpos] = if length < MIN_MATCH as u16 { 0 } else { length };
+        assert!(!(lmc.length[lmcpos] == 1 && lmc.dist[lmcpos] == 0));
         cache::sublen_to_cache(sublen.as_ref().unwrap(), lmcpos as usize, length as usize, lmc);
     }
 }
@@ -310,7 +310,7 @@ unsafe fn store_in_longest_match_cache(s: &BlockState,
  *     are used, the first 3 are ignored (the shortest length is 3. It is purely
  *     for convenience that the array is made 3 longer).
  */
-pub unsafe fn find_longest_match(s: &BlockState,
+pub unsafe fn find_longest_match(s: &mut BlockState,
                                  h: *const Hash,
                                  array: &[u8],
                                  pos: usize,
@@ -497,7 +497,7 @@ pub unsafe fn find_longest_match(s: &BlockState,
 /// The result is placed in the ZopfliLZ77Store.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-pub unsafe fn lz77_greedy(s: &BlockState, in_: &[u8], instart: usize, inend: usize, store: *mut LZ77Store) {
+pub unsafe fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend: usize, store: *mut LZ77Store) {
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
     let mut dummysublen: Option<[u16; 259]> = Some(uninitialized());
 

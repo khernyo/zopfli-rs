@@ -193,7 +193,7 @@ unsafe fn get_cost_model_min_cost(costmodel: CostModelFun, costcontext: *const c
  *     length to reach this byte from a previous byte.
  * returns the cost that was, according to the costmodel, needed to get to the end.
  */
-unsafe fn get_best_lengths(s: &BlockState,
+unsafe fn get_best_lengths(s: &mut BlockState,
                            in_: &[u8],
                            instart: usize,
                            inend: usize,
@@ -323,7 +323,7 @@ fn trace_backwards(size: usize, length_array: &Vec<u16>, path: &mut Vec<u16>) {
     path.reverse();
 }
 
-unsafe fn follow_path(s: &BlockState, in_: &[u8], instart: usize, inend: usize, path: &Vec<u16>, store: *mut LZ77Store) {
+unsafe fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usize, path: &Vec<u16>, store: *mut LZ77Store) {
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
 
     let mut _total_length_test: usize = 0;
@@ -412,7 +412,7 @@ unsafe fn get_statistics(store: *const LZ77Store, stats: *mut SymbolStats) {
  * returns the cost that was, according to the costmodel, needed to get to the end.
  *     This is not the actual cost.
  */
-unsafe fn lz77_optimal_run(s: &BlockState,
+unsafe fn lz77_optimal_run(s: &mut BlockState,
                            in_: &[u8],
                            instart: usize,
                            inend: usize,
@@ -435,7 +435,7 @@ unsafe fn lz77_optimal_run(s: &BlockState,
 /// Calculates lit/len and dist pairs for given data.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-pub unsafe fn lz77_optimal(s: &BlockState,
+pub unsafe fn lz77_optimal(s: &mut BlockState,
                            in_: &[u8],
                            instart: usize,
                            inend: usize,

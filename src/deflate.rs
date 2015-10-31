@@ -12,8 +12,6 @@ use util;
 use blocksplitter::{block_split, block_split_lz77, block_split_simple};
 
 #[cfg(feature = "longest-match-cache")]
-use cache;
-#[cfg(feature = "longest-match-cache")]
 use cache::LongestMatchCache;
 
 use lz77::{BlockState, LZ77Store, lz77_counts};
@@ -608,7 +606,7 @@ unsafe fn deflate_dynamic_block(options: *const Options,
     let mut store = LZ77Store::new();
     let mut btype: i32 = 2;
 
-    lz77_optimal(&s, in_, instart, inend, &mut store);
+    lz77_optimal(&mut s, in_, instart, inend, &mut store);
 
     // For small block, encoding with fixed tree can be smaller. For large block,
     // don't bother doing this expensive test, dynamic tree will be better.
@@ -624,16 +622,6 @@ unsafe fn deflate_dynamic_block(options: *const Options,
     }
 
     add_lz77_block(s.options, btype, is_final, &store.litlens, &store.dists, 0, store.litlens.len(), blocksize, bp, out);
-
-    #[cfg(feature = "longest-match-cache")]
-    unsafe fn clean_cache(s: BlockState) {
-        if let Some(lmc) = s.lmc {
-            cache::clean_cache(lmc);
-        }
-    }
-    #[cfg(not(feature = "longest-match-cache"))]
-    fn clean_cache(_s: BlockState) { }
-    clean_cache(s);
 }
 
 unsafe fn deflate_fixed_block(options: *const Options,
@@ -660,16 +648,6 @@ unsafe fn deflate_fixed_block(options: *const Options,
     lz77_optimal_fixed(&mut s, in_, instart, inend, &mut store);
 
     add_lz77_block(s.options, 1, is_final, &store.litlens, &store.dists, 0, store.litlens.len(), blocksize, bp, out);
-
-    #[cfg(feature = "longest-match-cache")]
-    unsafe fn clean_cache(s: BlockState) {
-        if let Some(lmc) = s.lmc {
-            cache::clean_cache(lmc);
-        }
-    }
-    #[cfg(not(feature = "longest-match-cache"))]
-    fn clean_cache(_s: BlockState) { }
-    clean_cache(s);
 }
 
 unsafe fn deflate_non_compressed_block(_options: *const Options,
@@ -777,7 +755,7 @@ unsafe fn deflate_splitting_last(options: *const Options,
     assert!(btype == 1 || btype == 2);
 
     if btype == 2 {
-        lz77_optimal(&s, in_, instart, inend, &mut store);
+        lz77_optimal(&mut s, in_, instart, inend, &mut store);
     } else {
         assert_eq!(btype, 1);
         lz77_optimal_fixed(&mut s, in_, instart, inend, &mut store);
@@ -797,16 +775,6 @@ unsafe fn deflate_splitting_last(options: *const Options,
         let end: usize = if i == splitpoints.len() { store.litlens.len() } else { splitpoints[i] };
         add_lz77_block(options, btype, i == splitpoints.len() && is_final, &store.litlens, &store.dists, start, end, 0, bp, out);
     }
-
-    #[cfg(feature = "longest-match-cache")]
-    unsafe fn clean_cache(s: BlockState) {
-        if let Some(lmc) = s.lmc {
-            cache::clean_cache(lmc);
-        }
-    }
-    #[cfg(not(feature = "longest-match-cache"))]
-    fn clean_cache(_s: BlockState) { }
-    clean_cache(s);
 }
 
 /**

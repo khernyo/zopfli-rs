@@ -275,7 +275,7 @@ pub unsafe fn block_split(options: *const Options,
                           inend: usize,
                           maxblocks: usize,
                           splitpoints: &mut Vec<usize>) {
-    let s = BlockState::new(options, instart, inend, None);
+    let mut s = BlockState::new(options, instart, inend, None);
     let mut lz77splitpoints: Vec<usize> = Vec::new();
     let mut store = LZ77Store::new();
 
@@ -283,7 +283,7 @@ pub unsafe fn block_split(options: *const Options,
 
     // Unintuitively, Using a simple LZ77 method here instead of ZopfliLZ77Optimal
     // results in better blocks.
-    lz77_greedy(&s, in_, instart, inend, &mut store);
+    lz77_greedy(&mut s, in_, instart, inend, &mut store);
 
     let store_size = store.litlens.len();
     block_split_lz77(options,
