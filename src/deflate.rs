@@ -94,7 +94,14 @@ fn patch_distance_codes_for_buggy_decoders(d_lengths: &mut [u32]) {
 
 /// Encodes the Huffman tree and returns how many bits its encoding takes. If out
 /// is a null pointer, only returns the size and runs faster.
-unsafe fn encode_tree(ll_lengths: *const u32, d_lengths: *const u32, use_16: bool, use_17: bool, use_18: bool, bp: Option<&mut u8>, out: Option<&mut Vec<u8>>) -> usize {
+unsafe fn encode_tree(ll_lengths: &[u32; 288],
+                      d_lengths: &[u32; 32],
+                      use_16: bool,
+                      use_17: bool,
+                      use_18: bool,
+                      bp: Option<&mut u8>,
+                      out: Option<&mut Vec<u8>>)
+                      -> usize {
     let mut rle: Vec<u32> = Vec::new(); // Runlength encoded version of lengths of litlen and dist trees.
     let mut rle_bits: Vec<u32> = Vec::new(); // Extra bits for rle values 16, 17 and 18.
     let mut hlit: u32 = 29; // 286 - 257
@@ -112,10 +119,10 @@ unsafe fn encode_tree(ll_lengths: *const u32, d_lengths: *const u32, use_16: boo
     let mut result_size: usize = 0;
 
     // Trim zeros.
-    while hlit > 0 && *ll_lengths.offset(257 + hlit as isize - 1) == 0 {
+    while hlit > 0 && ll_lengths[257 + hlit as usize - 1] == 0 {
         hlit -= 1;
     }
-    while hdist > 0 && *d_lengths.offset(1 + hdist as isize - 1) == 0 {
+    while hdist > 0 && d_lengths[1 + hdist as usize - 1] == 0 {
         hdist -= 1;
     }
     let hlit2: u32 = hlit + 257;
@@ -125,11 +132,11 @@ unsafe fn encode_tree(ll_lengths: *const u32, d_lengths: *const u32, use_16: boo
     let mut i: usize = 0;
     while i < lld_total as usize {
         // This is an encoding of a huffman tree, so now the length is a symbol
-        let symbol: u8 = if i < hlit2 as usize { *ll_lengths.offset(i as isize) as u8 } else { *d_lengths.offset((i - hlit2 as usize) as isize) as u8 };
+        let symbol: u8 = if i < hlit2 as usize { ll_lengths[i as usize] as u8 } else { d_lengths[i - hlit2 as usize] as u8 };
         let mut count: u32 = 1;
         if use_16 || (symbol == 0 && (use_17 || use_18)) {
             let mut j: usize = i as usize + 1;
-            while j < lld_total as usize && symbol == (if j < hlit2 as usize { *ll_lengths.offset(j as isize) as u8 } else { *d_lengths.offset((j - hlit2 as usize) as isize) as u8 }) {
+            while j < lld_total as usize && symbol == (if j < hlit2 as usize { ll_lengths[j] as u8 } else { d_lengths[j - hlit2 as usize] as u8 }) {
                 count += 1;
                 j += 1;
             }
@@ -242,8 +249,8 @@ unsafe fn encode_tree(ll_lengths: *const u32, d_lengths: *const u32, use_16: boo
     result_size
 }
 
-unsafe fn add_dynamic_tree(ll_lengths: *const u32,
-                           d_lengths: *const u32,
+unsafe fn add_dynamic_tree(ll_lengths: &[u32; 288],
+                           d_lengths: &[u32; 32],
                            bp: &mut u8,
                            out: &mut Vec<u8>) {
     let mut best: i32 = 0;
@@ -261,7 +268,7 @@ unsafe fn add_dynamic_tree(ll_lengths: *const u32,
 }
 
 /// Gives the exact size of the tree, in bits, as it will be encoded in DEFLATE.
-unsafe fn calculate_tree_size(ll_lengths: *const u32, d_lengths: *const u32) -> usize {
+unsafe fn calculate_tree_size(ll_lengths: &[u32; 288], d_lengths: &[u32; 32]) -> usize {
     let mut result: usize = 0;
 
     for i in 0..8 {
@@ -328,44 +335,40 @@ unsafe fn add_lz77_data(litlens: &Vec<u16>,
     assert!(expected_data_size == 0 || testlength == expected_data_size);
 }
 
-unsafe fn get_fixed_tree(ll_lengths: *mut u32, d_lengths: *mut u32) {
-    for i in 0..144 {
-        *ll_lengths.offset(i) = 8;
-    }
+fn get_fixed_tree() -> ([u32; 288], [u32; 32]) {
+    let mut ll_lengths: [u32; 288] = [8u32; 288];
+
     for i in 144..256 {
-        *ll_lengths.offset(i) = 9;
+        ll_lengths[i] = 9;
     }
     for i in 256..280 {
-        *ll_lengths.offset(i) = 7;
+        ll_lengths[i] = 7;
     }
-    for i in 280..288 {
-        *ll_lengths.offset(i) = 8;
-    }
-    for i in 0..32 {
-        *d_lengths.offset(i) = 5;
-    }
+
+    let d_lengths = [5u32; 32];
+    (ll_lengths, d_lengths)
 }
 
 /// Calculates size of the part after the header and tree of an LZ77 block, in bits.
-unsafe fn calculate_block_symbol_size(ll_lengths: *const u32,
-                                      d_lengths: *const u32,
-                                      litlens: &Vec<u16>,
-                                      dists: &Vec<u16>,
-                                      lstart: usize,
-                                      lend: usize)
-                                      -> usize {
+fn calculate_block_symbol_size(ll_lengths: &[u32; 288],
+                               d_lengths: &[u32; 32],
+                               litlens: &Vec<u16>,
+                               dists: &Vec<u16>,
+                               lstart: usize,
+                               lend: usize)
+                               -> usize {
     let mut result: usize = 0;
     for i in lstart..lend {
         if dists[i] == 0 {
-            result += *ll_lengths.offset(litlens[i] as isize) as usize;
+            result += ll_lengths[litlens[i] as usize] as usize;
         } else {
-            result += *ll_lengths.offset(get_length_symbol(litlens[i] as i32) as isize) as usize;
-            result += *d_lengths.offset(get_dist_symbol(dists[i] as i32) as isize) as usize;
+            result += ll_lengths[get_length_symbol(litlens[i] as i32) as usize] as usize;
+            result += d_lengths[get_dist_symbol(dists[i] as i32) as usize] as usize;
             result += get_length_extra_bits(litlens[i] as i32) as usize;
             result += get_dist_extra_bits(dists[i] as i32) as usize;
         }
     }
-    result += *ll_lengths.offset(256) as usize; // end symbol
+    result += ll_lengths[256] as usize; // end symbol
     result
 }
 
@@ -469,15 +472,17 @@ fn optimize_huffman_for_rle(counts: &mut [usize]) {
 unsafe fn get_dynamic_lengths(litlens: &Vec<u16>,
                               dists: &Vec<u16>,
                               lstart: usize,
-                              lend: usize,
-                              ll_lengths: &mut [u32],
-                              d_lengths: &mut [u32]) {
+                              lend: usize)
+                              -> ([u32; 288], [u32; 32]) {
     let (mut ll_counts, mut d_counts) = lz77_counts(litlens, dists, lstart, lend);
     optimize_huffman_for_rle(&mut ll_counts);
     optimize_huffman_for_rle(&mut d_counts);
-    calculate_bit_lengths(&ll_counts, 288, 15, ll_lengths);
-    calculate_bit_lengths(&d_counts, 32, 15, d_lengths);
-    patch_distance_codes_for_buggy_decoders(d_lengths);
+    let mut ll_lengths = [0u32; 288];
+    calculate_bit_lengths(&ll_counts, 288, 15, &mut ll_lengths);
+    let mut d_lengths = [0u32; 32];
+    calculate_bit_lengths(&d_counts, 32, 15, &mut d_lengths);
+    patch_distance_codes_for_buggy_decoders(&mut d_lengths);
+    (ll_lengths, d_lengths)
 }
 
 /// Calculates block size in bits.
@@ -491,23 +496,23 @@ pub unsafe fn calculate_block_size(litlens: &Vec<u16>,
                                    lend: usize,
                                    btype: i32)
                                    -> f64 {
-    let mut ll_lengths: [u32; 288] = uninitialized();
-    let mut d_lengths: [u32; 32] = uninitialized();
-
     // bfinal and btype bits
     let mut result: f64 = 3.0;
 
     // This is not for uncompressed blocks.
     assert!(btype == 1 || btype == 2);
 
-    if btype == 1 {
-        get_fixed_tree(ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
-    } else {
-        get_dynamic_lengths(litlens, dists, lstart, lend, &mut ll_lengths, &mut d_lengths);
-        result += calculate_tree_size(ll_lengths.as_ptr(), d_lengths.as_ptr()) as f64;
-    }
+    let (ll_lengths, d_lengths) = {
+        if btype == 1 {
+            get_fixed_tree()
+        } else {
+            let (ll_lengths, d_lengths) = get_dynamic_lengths(litlens, dists, lstart, lend);
+            result += calculate_tree_size(&ll_lengths, &d_lengths) as f64;
+            (ll_lengths, d_lengths)
+        }
+    };
 
-    result += calculate_block_symbol_size(ll_lengths.as_ptr(), d_lengths.as_ptr(), litlens, dists, lstart, lend) as f64;
+    result += calculate_block_symbol_size(&ll_lengths, &d_lengths, litlens, dists, lstart, lend) as f64;
 
     result
 }
@@ -539,8 +544,6 @@ unsafe fn add_lz77_block(options: &Options,
                          expected_data_size: usize,
                          bp: &mut u8,
                          out: &mut Vec<u8>) {
-    let mut ll_lengths: [u32; 288] = uninitialized();
-    let mut d_lengths: [u32; 32] = uninitialized();
     let mut ll_symbols: [u32; 288] = uninitialized();
     let mut d_symbols: [u32; 32] = uninitialized();
 
@@ -548,21 +551,24 @@ unsafe fn add_lz77_block(options: &Options,
     add_bit(btype & 1, bp, out);
     add_bit((btype & 2) >> 1, bp, out);
 
-    if btype == 1 {
-        // Fixed block.
-        get_fixed_tree(ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
-    } else {
-        // Dynamic block.
-        assert_eq!(btype, 2);
+    let (ll_lengths, d_lengths) = {
+        if btype == 1 {
+            // Fixed block.
+            get_fixed_tree()
+        } else {
+            // Dynamic block.
+            assert_eq!(btype, 2);
 
-        get_dynamic_lengths(litlens, dists, lstart, lend, &mut ll_lengths, &mut d_lengths);
+            let (ll_lengths, d_lengths) = get_dynamic_lengths(litlens, dists, lstart, lend);
 
-        let detect_tree_size: u32 = out.len() as u32;
-        add_dynamic_tree(ll_lengths.as_ptr(), d_lengths.as_ptr(), bp, out);
-        if (*options).verbose {
-            println_err!("treesize: {}", out.len() - detect_tree_size as usize);
+            let detect_tree_size: u32 = out.len() as u32;
+            add_dynamic_tree(&ll_lengths, &d_lengths, bp, out);
+            if (*options).verbose {
+                println_err!("treesize: {}", out.len() - detect_tree_size as usize);
+            }
+            (ll_lengths, d_lengths)
         }
-    }
+    };
 
     lengths_to_symbols(&ll_lengths, 288, 15, &mut ll_symbols);
     lengths_to_symbols(&d_lengths, 32, 15, &mut d_symbols);
