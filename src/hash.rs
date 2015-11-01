@@ -1,3 +1,4 @@
+use std::iter;
 use std::mem::size_of_val;
 use std::ptr::null_mut;
 
@@ -84,7 +85,7 @@ pub struct HashSame;
 #[cfg(feature = "hash-same")]
 pub struct HashSame {
     /// Amount of repetitions of same byte after this.
-    pub same: *mut u16,
+    pub same: Vec<u16>,
 }
 
 impl HashSame {
@@ -95,20 +96,7 @@ impl HashSame {
 
     #[cfg(feature = "hash-same")]
     unsafe fn new(window_size: usize) -> HashSame {
-        let mut same: *mut u16 = null_mut();
-        same = malloc((size_of_val(&*same) * window_size) as size_t) as *mut u16;
-        for i in 0..window_size {
-            *same.offset(i as isize) = 0;
-        }
-        HashSame { same: same }
-    }
-
-    #[cfg(not(feature = "hash-same"))]
-    fn clean(_h: HashSame) { }
-
-    #[cfg(feature = "hash-same")]
-    unsafe fn clean(h: HashSame) {
-        free(h.same as *mut c_void);
+        HashSame { same: iter::repeat(0).take(window_size).collect() }
     }
 }
 
@@ -150,7 +138,6 @@ impl Hash {
         free(h.hashval as *mut c_void);
 
         HashSameHash::clean(h.hash_same_hash);
-        HashSame::clean(h.hash_same);
     }
 }
 
@@ -167,13 +154,13 @@ fn update_hash_same(_array: &[u8], _pos: usize, _end: usize, _hpos: u16, _h: &mu
 #[cfg(feature = "hash-same")]
 unsafe fn update_hash_same(array: &[u8], pos: usize, end: usize, hpos: u16, h: &mut Hash) {
     let mut amount: usize = 0;
-    if *h.hash_same.same.offset((pos as isize - 1) & WINDOW_MASK as isize) > 1 {
-        amount = (*h.hash_same.same.offset(((pos - 1) & WINDOW_MASK) as isize) - 1) as usize;
+    if h.hash_same.same[pos.wrapping_sub(1) & WINDOW_MASK] > 1 {
+        amount = (h.hash_same.same[pos.wrapping_sub(1) & WINDOW_MASK] - 1) as usize;
     }
     while pos + amount + 1 < end && array[pos] == array[(pos + amount + 1)] && amount < !0u16 as usize {
         amount += 1;
     }
-    *h.hash_same.same.offset(hpos as isize) = amount as u16;
+    h.hash_same.same[hpos as usize] = amount as u16;
 }
 
 #[cfg(not(feature = "hash-same-hash"))]
@@ -181,7 +168,7 @@ fn update_hash_same_hash(_hpos: u16, _h: &mut Hash) { }
 
 #[cfg(feature = "hash-same-hash")]
 unsafe fn update_hash_same_hash(hpos: u16, h: &mut Hash) {
-    h.hash_same_hash.val2 = ((*h.hash_same.same.offset(hpos as isize) as i32 - MIN_MATCH as i32) & 255) ^ h.val;
+    h.hash_same_hash.val2 = ((h.hash_same.same[hpos as usize] as i32 - MIN_MATCH as i32) & 255) ^ h.val;
     *h.hash_same_hash.hashval2.offset(hpos as isize) = h.hash_same_hash.val2;
     if *h.hash_same_hash.head2.offset(h.hash_same_hash.val2 as isize) != -1 && *h.hash_same_hash.hashval2.offset(*h.hash_same_hash.head2.offset(h.hash_same_hash.val2 as isize) as isize) == h.hash_same_hash.val2 {
         *h.hash_same_hash.prev2.offset(hpos as isize) = *h.hash_same_hash.head2.offset(h.hash_same_hash.val2 as isize) as u16;

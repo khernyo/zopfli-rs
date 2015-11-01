@@ -401,9 +401,9 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
                                        scan: *mut *const u8,
                                        match_: *mut *const u8,
                                        dist: u32) {
-                    let same0: u16 = *(*h).hash_same.same.offset((pos & WINDOW_MASK) as isize);
+                    let same0: u16 = (*h).hash_same.same[pos & WINDOW_MASK];
                     if same0 > 2 && **scan == **match_ {
-                        let same1: u16 = *(*h).hash_same.same.offset(((pos - dist as usize) & WINDOW_MASK) as isize);
+                        let same1: u16 = (*h).hash_same.same[(pos - dist as usize) & WINDOW_MASK];
                         let mut same: u16 = if same0 < same1 { same0 } else { same1 };
                         if same as usize > limit {
                             same = limit as u16;
@@ -454,7 +454,7 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
                                     hpos: u16,
                                     p: u16) {
             // Switch to the other hash once this will be more efficient.
-            if *hhead != (*h).hash_same_hash.head2 && bestlength >= *(*h).hash_same.same.offset(hpos as isize) && (*h).hash_same_hash.val2 == *(*h).hash_same_hash.hashval2.offset(p as isize) {
+            if *hhead != (*h).hash_same_hash.head2 && bestlength >= (*h).hash_same.same[hpos as usize] && (*h).hash_same_hash.val2 == *(*h).hash_same_hash.hashval2.offset(p as isize) {
                 // Now use the hash that encodes the length and first byte.
                 *hhead = (*h).hash_same_hash.head2;
                 *hprev = (*h).hash_same_hash.prev2;

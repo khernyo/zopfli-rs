@@ -235,10 +235,10 @@ unsafe fn get_best_lengths(s: &mut BlockState,
             use util::WINDOW_MASK;
             // If we're in a long repetition of the same character and have more than
             // ZOPFLI_MAX_MATCH characters before and after our position.
-            if *(*h).hash_same.same.offset((*i & WINDOW_MASK) as isize) as usize > MAX_MATCH * 2
+            if (*h).hash_same.same[*i & WINDOW_MASK] as usize > MAX_MATCH * 2
                 && *i > instart + MAX_MATCH + 1
                 && *i + MAX_MATCH * 2 + 1 < inend
-                && *(*h).hash_same.same.offset(((*i - MAX_MATCH) & WINDOW_MASK) as isize) as usize > MAX_MATCH {
+                && (*h).hash_same.same[(*i - MAX_MATCH) & WINDOW_MASK] as usize > MAX_MATCH {
                     let symbolcost: f64 = costmodel(MAX_MATCH as u32, 1, costcontext);
                     // Set the length to reach each one to ZOPFLI_MAX_MATCH, and the cost to
                     // the cost corresponding to that length. Doing this, we skip
