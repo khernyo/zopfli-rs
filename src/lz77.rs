@@ -41,9 +41,9 @@ impl LZ77Store {
         }
     }
 
-    pub unsafe fn init(store: *mut LZ77Store) {
-        (*store).litlens.clear();
-        (*store).dists.clear();
+    pub fn init(store: &mut LZ77Store) {
+        store.litlens.clear();
+        store.dists.clear();
     }
 }
 
@@ -93,9 +93,9 @@ impl<'a> BlockState<'a> {
 
 /// Appends the length and distance to the LZ77 arrays of the ZopfliLZ77Store.
 /// context must be a ZopfliLZ77Store*.
-pub unsafe fn store_litlen_dist(length: u16, dist: u16, store: *mut LZ77Store) {
-    (*store).litlens.push(length);
-    (*store).dists.push(dist);
+pub fn store_litlen_dist(length: u16, dist: u16, store: &mut LZ77Store) {
+    store.litlens.push(length);
+    store.dists.push(dist);
 }
 
 /**
@@ -497,7 +497,7 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
 /// The result is placed in the ZopfliLZ77Store.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-pub unsafe fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend: usize, store: *mut LZ77Store) {
+pub unsafe fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend: usize, store: &mut LZ77Store) {
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
     let mut dummysublen: Option<[u16; 259]> = Some(uninitialized());
 
