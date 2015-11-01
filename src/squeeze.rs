@@ -43,21 +43,15 @@ unsafe fn copy_stats(source: &SymbolStats, dest: *mut SymbolStats) {
 }
 
 /// Adds the bit lengths.
-unsafe fn add_weighed_stat_freqs(stats1: *const SymbolStats,
-                                 w1: f64,
-                                 stats2: *const SymbolStats,
-                                 w2: f64,
-                                 result: *mut SymbolStats) {
+fn add_weighed_stat_freqs(stats1: &mut SymbolStats, w1: f64, stats2: &SymbolStats, w2: f64) {
     for i in 0..288 {
-        (*result).litlens[i] = ((*stats1).litlens[i] as f64 * w1 +
-                                (*stats2).litlens[i] as f64 *
-                                w2) as usize;
+        stats1.litlens[i] =
+            (stats1.litlens[i] as f64 * w1 + stats2.litlens[i] as f64 * w2) as usize;
     }
     for i in 0..32 {
-        (*result).dists[i] = ((*stats1).dists[i] as f64 * w1 +
-                              (*stats2).dists[i] as f64 * w2) as usize;
+        stats1.dists[i] = (stats1.dists[i] as f64 * w1 + stats2.dists[i] as f64 * w2) as usize;
     }
-    (*result).litlens[256] = 1; // End symbol.
+    stats1.litlens[256] = 1; // End symbol.
 }
 
 struct RanState {
@@ -481,7 +475,7 @@ pub unsafe fn lz77_optimal(s: &mut BlockState,
             // This makes it converge slower but better. Do it only once the
             // randomness kicks in so that if the user does few iterations, it gives a
             // better result sooner.
-            add_weighed_stat_freqs(&stats, 1.0, &laststats, 0.5, &mut stats);
+            add_weighed_stat_freqs(&mut stats, 1.0, &laststats, 0.5);
             calculate_statistics(&mut stats);
         }
         if i > 5 && cost == lastcost {
