@@ -2,19 +2,19 @@ use std::iter;
 
 use libc::size_t;
 
-pub unsafe fn lengths_to_symbols(lengths: *const u32, n: usize, maxbits: u32, symbols: *mut u32) {
+pub fn lengths_to_symbols(lengths: &[u32], n: usize, maxbits: u32, symbols: &mut [u32]) {
     let mut bl_count: Vec<size_t> = iter::repeat(0).take(maxbits as usize + 1).collect();
     let mut next_code: Vec<size_t> = iter::repeat(0).take(maxbits as usize + 1).collect();
 
     for i in 0..n {
-        *symbols.offset(i as isize) = 0;
+        symbols[i] = 0;
     }
 
     // 1) Count the number of codes for each code length. Let bl_count[N] be the
     // number of codes of length N, N >= 1.
     for i in 0..n {
-        assert!(*lengths.offset(i as isize) <= maxbits, "{} <= {}", *lengths.offset(i as isize), maxbits);
-        bl_count[*lengths.offset(i as isize) as usize] += 1;
+        assert!(lengths[i] <= maxbits, "{} <= {}", lengths[i], maxbits);
+        bl_count[lengths[i] as usize] += 1;
     }
 
     // 2) Find the numerical value of the smallest code for each code length.
@@ -28,9 +28,9 @@ pub unsafe fn lengths_to_symbols(lengths: *const u32, n: usize, maxbits: u32, sy
     // 3) Assign numerical values to all codes, using consecutive values for all
     // codes of the same length with the base values determined at step 2.
     for i in 0..n {
-        let len = *lengths.offset(i as isize);
+        let len = lengths[i];
         if len != 0 {
-            *symbols.offset(i as isize) = next_code[len as usize] as u32;
+            symbols[i] = next_code[len as usize] as u32;
             next_code[len as usize] += 1;
         }
     }
@@ -64,7 +64,7 @@ pub fn calculate_entropy(count: &[usize], bitlengths: &mut [f64]) {
     }
 }
 
-pub unsafe fn calculate_bit_lengths(count: *const usize, n: usize, maxbits: i32, bitlengths: *mut u32) {
+pub unsafe fn calculate_bit_lengths(count: &[usize], n: usize, maxbits: i32, bitlengths: &mut [u32]) {
     let error = super::katajainen::length_limited_code_lengths(count, n as i32, maxbits, bitlengths);
     assert!(!error);
 }

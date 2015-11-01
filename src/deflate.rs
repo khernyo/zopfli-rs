@@ -70,12 +70,12 @@ fn add_huffman_bits(symbol: u32, length: u32, bp: &mut u8, out: &mut Vec<u8>) {
  *
  * d_lengths: the 32 lengths of the distance codes.
  */
-unsafe fn patch_distance_codes_for_buggy_decoders(d_lengths: *mut u32) {
+fn patch_distance_codes_for_buggy_decoders(d_lengths: &mut [u32]) {
     // Amount of non-zero distance codes
     let mut num_dist_codes: i32 = 0;
 
     for i in 0..30 /* Ignore the two unused codes from the spec */ {
-        if *d_lengths.offset(i) != 0 {
+        if d_lengths[i] != 0 {
             num_dist_codes += 1;
         }
         if num_dist_codes >= 2 {
@@ -85,10 +85,10 @@ unsafe fn patch_distance_codes_for_buggy_decoders(d_lengths: *mut u32) {
     }
 
     if num_dist_codes == 0 {
-        *d_lengths.offset(0) = 1;
-        *d_lengths.offset(1) = 1;
+        d_lengths[0] = 1;
+        d_lengths[1] = 1;
     } else if num_dist_codes == 1 {
-        *d_lengths.offset(if *d_lengths.offset(0) != 0 { 1 } else { 0 }) = 1;
+        d_lengths[if d_lengths[0] != 0 { 1 } else { 0 }] = 1;
     }
 }
 
@@ -193,9 +193,9 @@ unsafe fn encode_tree(ll_lengths: *const u32, d_lengths: *const u32, use_16: boo
         i += 1;
     }
 
-    calculate_bit_lengths(clcounts.as_ptr(), 19, 7, clcl.as_mut_ptr());
+    calculate_bit_lengths(&clcounts, 19, 7, &mut clcl);
     if !size_only {
-        lengths_to_symbols(clcl.as_ptr(), 19, 7, clsymbols.as_mut_ptr());
+        lengths_to_symbols(&clcl, 19, 7, &mut clsymbols);
     }
 
     hclen = 15;
@@ -469,16 +469,16 @@ unsafe fn get_dynamic_lengths(litlens: &Vec<u16>,
                               dists: &Vec<u16>,
                               lstart: usize,
                               lend: usize,
-                              ll_lengths: *mut u32,
-                              d_lengths: *mut u32) {
+                              ll_lengths: &mut [u32],
+                              d_lengths: &mut [u32]) {
     let mut ll_counts: [usize; 288] = uninitialized();
     let mut d_counts: [usize; 32] = uninitialized();
 
     lz77_counts(litlens, dists, lstart, lend, ll_counts.as_mut_ptr(), d_counts.as_mut_ptr());
     optimize_huffman_for_rle(288, ll_counts.as_mut_ptr());
     optimize_huffman_for_rle(32, d_counts.as_mut_ptr());
-    calculate_bit_lengths(ll_counts.as_ptr(), 288, 15, ll_lengths);
-    calculate_bit_lengths(d_counts.as_ptr(), 32, 15, d_lengths);
+    calculate_bit_lengths(&ll_counts, 288, 15, ll_lengths);
+    calculate_bit_lengths(&d_counts, 32, 15, d_lengths);
     patch_distance_codes_for_buggy_decoders(d_lengths);
 }
 
@@ -505,7 +505,7 @@ pub unsafe fn calculate_block_size(litlens: &Vec<u16>,
     if btype == 1 {
         get_fixed_tree(ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
     } else {
-        get_dynamic_lengths(litlens, dists, lstart, lend, ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
+        get_dynamic_lengths(litlens, dists, lstart, lend, &mut ll_lengths, &mut d_lengths);
         result += calculate_tree_size(ll_lengths.as_ptr(), d_lengths.as_ptr()) as f64;
     }
 
@@ -557,7 +557,7 @@ unsafe fn add_lz77_block(options: &Options,
         // Dynamic block.
         assert_eq!(btype, 2);
 
-        get_dynamic_lengths(litlens, dists, lstart, lend, ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
+        get_dynamic_lengths(litlens, dists, lstart, lend, &mut ll_lengths, &mut d_lengths);
 
         let detect_tree_size: u32 = out.len() as u32;
         add_dynamic_tree(ll_lengths.as_ptr(), d_lengths.as_ptr(), bp, out);
@@ -566,8 +566,8 @@ unsafe fn add_lz77_block(options: &Options,
         }
     }
 
-    lengths_to_symbols(ll_lengths.as_ptr(), 288, 15, ll_symbols.as_mut_ptr());
-    lengths_to_symbols(d_lengths.as_ptr(), 32, 15, d_symbols.as_mut_ptr());
+    lengths_to_symbols(&ll_lengths, 288, 15, &mut ll_symbols);
+    lengths_to_symbols(&d_lengths, 32, 15, &mut d_symbols);
 
     let detect_block_size: usize = out.len();
     add_lz77_data(litlens, dists, lstart, lend, expected_data_size, ll_symbols.as_ptr(), ll_lengths.as_ptr(), d_symbols.as_ptr(), d_lengths.as_ptr(), bp, out);

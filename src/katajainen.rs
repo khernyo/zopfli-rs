@@ -170,12 +170,12 @@ unsafe fn init_lists(pool: &mut NodePool,
  * last chain of the last list contains the amount of active leaves in each list.
  * chain: Chain to extract the bit length from (last chain from last list).
  */
-unsafe fn extract_bit_lengths(chain: *const Node, leaves: &[Node], bitlengths: *mut u32) {
+unsafe fn extract_bit_lengths(chain: *const Node, leaves: &[Node], bitlengths: &mut [u32]) {
     let mut node = chain;
     while node != null() {
         for i in 0..(*node).count {
-            *bitlengths.offset(leaves[i as usize].count as isize) =
-                *bitlengths.offset(leaves[i as usize].count as isize) + 1;
+            bitlengths[leaves[i as usize].count as usize] =
+                bitlengths[leaves[i as usize].count as usize] + 1;
         }
         node = (*node).tail;
     }
@@ -198,24 +198,24 @@ extern {
              compar: extern "C" fn(*const c_void, *const c_void) -> i32);
 }
 
-pub unsafe fn length_limited_code_lengths(frequencies: *const usize,
+pub unsafe fn length_limited_code_lengths(frequencies: &[usize],
                                           n: i32,
                                           maxbits: i32,
-                                          bitlengths: *mut u32)
+                                          bitlengths: &mut [u32])
                                           -> bool {
     // One leaf per symbol. Only numsymbols leaves will be used.
     let mut leaves: Vec<Node> = Vec::with_capacity(n as usize);
 
     // Initialize all bitlengths at 0.
     for i in 0..n {
-        *bitlengths.offset(i as isize) = 0;
+        bitlengths[i as usize] = 0;
     }
 
     // Count used symbols and place them in the leaves.
     for i in 0..n {
-        if *frequencies.offset(i as isize) != 0 {
+        if frequencies[i as usize] != 0 {
             leaves.push(Node {
-                weight: *frequencies.offset(i as isize),
+                weight: frequencies[i as usize],
                 count: i, // Index of symbol this leaf represents.
                 tail: null_mut(),
                 in_use: false,
@@ -233,7 +233,7 @@ pub unsafe fn length_limited_code_lengths(frequencies: *const usize,
         return false; // No symbols at all. OK.
     }
     if numsymbols == 1 {
-        *bitlengths.offset(leaves[0].count as isize) = 1;
+        bitlengths[leaves[0].count as usize] = 1;
         return false; // Only one symbol, give it bitlength 1, not 0. OK.
     }
 
