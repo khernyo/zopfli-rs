@@ -197,10 +197,10 @@ unsafe fn get_match(scan: *const u8,
 #[cfg(not(feature = "longest-match-cache"))]
 fn try_get_from_longest_match_cache(_s: &mut BlockState,
                                     _pos: usize,
-                                    _limit: *mut usize,
+                                    _limit: &mut usize,
                                     _sublen: &mut Option<[u16; 259]>,
-                                    _distance: *mut u16,
-                                    _length: *mut u16)
+                                    _distance: &mut u16,
+                                    _length: &mut u16)
                                     -> bool {
     false
 }
@@ -212,10 +212,10 @@ fn try_get_from_longest_match_cache(_s: &mut BlockState,
 #[cfg(feature = "longest-match-cache")]
 unsafe fn try_get_from_longest_match_cache(s: &mut BlockState,
                                            pos: usize,
-                                           limit: *mut usize,
+                                           limit: &mut usize,
                                            sublen: &mut Option<[u16; 259]>,
-                                           distance: *mut u16,
-                                           length: *mut u16)
+                                           distance: &mut u16,
+                                           length: &mut u16)
                                            -> bool {
     // The LMC cache starts at the beginning of the block rather than the
     // beginning of the whole array.
@@ -317,8 +317,8 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
                                  size: usize,
                                  limit: usize,
                                  sublen: &mut Option<[u16; 259]>,
-                                 distance: *mut u16,
-                                 length: *mut u16) {
+                                 distance: &mut u16,
+                                 length: &mut u16) {
     let mut limit = limit;
 
     let hpos: u16 = (pos & WINDOW_MASK) as u16;
@@ -389,8 +389,8 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
                 fn do_hash_same(_h: &Hash,
                                 _pos: usize,
                                 _limit: usize,
-                                _scan: *mut *const u8,
-                                _match: *mut *const u8,
+                                _scan: &mut *const u8,
+                                _match: &mut *const u8,
                                 _dist: u32) {
                 }
 
@@ -398,8 +398,8 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
                 unsafe fn do_hash_same(h: &Hash,
                                        pos: usize,
                                        limit: usize,
-                                       scan: *mut *const u8,
-                                       match_: *mut *const u8,
+                                       scan: &mut *const u8,
+                                       match_: &mut *const u8,
                                        dist: u32) {
                     let same0: u16 = h.hash_same.same[pos & WINDOW_MASK];
                     if same0 > 2 && **scan == **match_ {
@@ -435,10 +435,10 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
 
         #[cfg(not(feature = "hash-same-hash"))]
         fn do_hash_same_hash(_h: &Hash,
-                             _hhead: *mut *const i32,
-                             _hprev: *mut *const u16,
-                             _hhashval: *mut *const i32,
-                             _hval: *mut i32,
+                             _hhead: &mut *const i32,
+                             _hprev: &mut *const u16,
+                             _hhashval: &mut *const i32,
+                             _hval: &mut i32,
                              _bestlength: u16,
                              _hpos: u16,
                              _p: u16) {
@@ -446,10 +446,10 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
 
         #[cfg(feature = "hash-same-hash")]
         unsafe fn do_hash_same_hash(h: &Hash,
-                                    hhead: *mut *const i32,
-                                    hprev: *mut *const u16,
-                                    hhashval: *mut *const i32,
-                                    hval: *mut i32,
+                                    hhead: &mut *const i32,
+                                    hprev: &mut *const u16,
+                                    hhashval: &mut *const i32,
+                                    hval: &mut i32,
                                     bestlength: u16,
                                     hpos: u16,
                                     p: u16) {

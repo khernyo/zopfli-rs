@@ -35,11 +35,11 @@ impl SymbolStats {
     }
 }
 
-unsafe fn copy_stats(source: &SymbolStats, dest: *mut SymbolStats) {
-    (*dest).litlens = source.litlens;
-    (*dest).dists = source.dists;
-    (*dest).ll_symbols = source.ll_symbols;
-    (*dest).d_symbols = source.d_symbols;
+unsafe fn copy_stats(source: &SymbolStats, dest: &mut SymbolStats) {
+    dest.litlens = source.litlens;
+    dest.dists = source.dists;
+    dest.ll_symbols = source.ll_symbols;
+    dest.d_symbols = source.d_symbols;
 }
 
 /// Adds the bit lengths.
@@ -66,33 +66,30 @@ impl RanState {
 }
 
 /// Get random number: "Multiply-With-Carry" generator of G. Marsaglia
-unsafe fn ran(state: *mut RanState) -> u32 {
-    (*state).m_z = 36969 * ((*state).m_z & 65535) + ((*state).m_z >> 16);
-    (*state).m_w = 18000 * ((*state).m_w & 65535) + ((*state).m_w >> 16);
-    return ((*state).m_z << 16).wrapping_add((*state).m_w);  // 32-bit result.
+fn ran(state: &mut RanState) -> u32 {
+    state.m_z = 36969 * (state.m_z & 65535) + (state.m_z >> 16);
+    state.m_w = 18000 * (state.m_w & 65535) + (state.m_w >> 16);
+    return (state.m_z << 16).wrapping_add(state.m_w);  // 32-bit result.
 }
 
-unsafe fn randomize_freqs(state: *mut RanState, freqs: *mut usize, n: i32) {
+fn randomize_freqs(state: &mut RanState, freqs: &mut [usize]) {
+    let n = freqs.len();
     for i in 0..n {
         if (ran(state) >> 4) % 3 == 0 {
-            *freqs.offset(i as isize) = *freqs.offset((ran(state) % n as u32) as isize);
+            freqs[i] = freqs[(ran(state) % n as u32) as usize];
         }
     }
 }
 
-unsafe fn randomize_stat_freqs(state: *mut RanState, stats: *mut SymbolStats) {
-    randomize_freqs(state, (*stats).litlens.as_mut_ptr(), 288);
-    randomize_freqs(state, (*stats).dists.as_mut_ptr(), 32);
-    (*stats).litlens[256] = 1; // End symbol.
+fn randomize_stat_freqs(state: &mut RanState, stats: &mut SymbolStats) {
+    randomize_freqs(state, &mut stats.litlens);
+    randomize_freqs(state, &mut stats.dists);
+    stats.litlens[256] = 1; // End symbol.
 }
 
-unsafe fn clear_stat_freqs(stats: *mut SymbolStats) {
-    for i in 0..288 {
-        (*stats).litlens[i] = 0;
-    }
-    for i in 0..32 {
-        (*stats).dists[i] = 0;
-    }
+fn clear_stat_freqs(stats: &mut SymbolStats) {
+    stats.litlens = [0; 288];
+    stats.dists = [0; 32];
 }
 
 /// Function that calculates a cost based on a model for the given LZ77 symbol.

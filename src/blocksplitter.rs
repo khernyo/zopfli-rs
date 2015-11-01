@@ -166,12 +166,12 @@ fn print_block_split_points(litlens: &Vec<u16>,
 /// lstart: output variable, giving start of block.
 /// lend: output variable, giving end of block.
 /// returns 1 if a block was found, 0 if no block found (all are done).
-unsafe fn find_largest_splittable_block(llsize: usize,
-                                        done: &Vec<u8>,
-                                        splitpoints: &Vec<usize>,
-                                        lstart: *mut usize,
-                                        lend: *mut usize)
-                                        -> bool {
+fn find_largest_splittable_block(llsize: usize,
+                                done: &Vec<u8>,
+                                splitpoints: &Vec<usize>,
+                                lstart: &mut usize,
+                                lend: &mut usize)
+                                -> bool {
     assert_eq!(llsize, done.len());
     let mut longest: usize = 0;
     let mut found = false;
