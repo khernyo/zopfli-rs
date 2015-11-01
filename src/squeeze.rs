@@ -1,6 +1,5 @@
 use std::io::Write;
 use std::iter;
-use std::mem::uninitialized;
 use std::ptr::null_mut;
 
 use libc::c_void;
@@ -203,9 +202,9 @@ unsafe fn get_best_lengths(s: &mut BlockState,
                            -> f64 {
     // Best cost to get here so far.
     let blocksize: usize = inend - instart;
-    let mut leng: u16 = uninitialized();
-    let mut dist: u16 = uninitialized();
-    let mut sublen: Option<[u16; 259]> = Some(uninitialized());
+    let mut leng: u16 = 0;
+    let mut dist: u16 = 0;
+    let mut sublen: Option<[u16; 259]> = Some([0; 259]);
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
     let result: f64;
     let mincost: f64 = get_cost_model_min_cost(costmodel, costcontext);
@@ -340,14 +339,14 @@ unsafe fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usi
     let mut pos: usize = instart;
     for i in 0..path.len() {
         let mut length: u16 = path[i];
-        let mut dummy_length: u16 = uninitialized();
-        let mut dist: u16 = uninitialized();
         assert!(pos < inend);
 
         update_hash(in_, pos, inend, &mut hash);
 
         // Add to output.
         if length as usize >= MIN_MATCH {
+            let mut dummy_length: u16 = 0;
+            let mut dist: u16 = 0;
             // Get the distance by recalculating longest match. The found length
             // should match the length from the path.
             find_longest_match(s, &mut hash, in_, pos, inend, length as usize, &mut None, &mut dist, &mut dummy_length);
@@ -444,8 +443,8 @@ pub unsafe fn lz77_optimal(s: &mut BlockState,
     let mut path: Vec<u16> = Vec::new();
     let mut currentstore = LZ77Store::new();
     let mut stats = SymbolStats::new();
-    let mut beststats: SymbolStats = uninitialized();
-    let mut laststats: SymbolStats = uninitialized();
+    let mut beststats = SymbolStats::new();
+    let mut laststats = SymbolStats::new();
     let mut cost: f64;
     let mut bestcost: f64 = LARGE_FLOAT;
     let mut lastcost: f64 = 0f64;

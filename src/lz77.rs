@@ -1,7 +1,7 @@
 //! Functions for basic LZ77 compression and utilities for the "squeeze" LZ77
 //! compression.
 
-use std::mem::{size_of, uninitialized};
+use std::mem::size_of;
 
 use libc::size_t;
 
@@ -499,7 +499,6 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
 /// dictionary.
 pub unsafe fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend: usize, store: &mut LZ77Store) {
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
-    let mut dummysublen: Option<[u16; 259]> = Some(uninitialized());
 
     if instart == inend {
         return;
@@ -517,6 +516,7 @@ pub unsafe fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend:
     let mut match_available: bool = false;
     // End of lazy matching.
 
+    let mut dummysublen: Option<[u16; 259]> = Some([0u16; 259]);
     let mut i: usize = instart;
     while i < inend {
         hash::update_hash(in_, i, inend, &mut hash);

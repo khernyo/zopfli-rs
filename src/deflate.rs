@@ -3,7 +3,6 @@
 
 use std::io::Write;
 use std::iter;
-use std::mem::uninitialized;
 
 use super::Options;
 use util;
@@ -108,8 +107,6 @@ unsafe fn encode_tree(ll_lengths: &[u32; 288],
     let mut hdist: u32 = 29; // 32 - 1, but gzip does not like hdist > 29.
     let mut hclen: u32;
     let mut clcounts: [usize; 19] = [0; 19];
-    let mut clcl: [u32; 19] = uninitialized(); // Code length code lengths.
-    let mut clsymbols: [u32; 19] = uninitialized();
 
     /// The order in which code length code lengths are encoded as per deflate.
     const ORDER: [u32; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
@@ -200,6 +197,8 @@ unsafe fn encode_tree(ll_lengths: &[u32; 288],
         i += 1;
     }
 
+    let mut clcl = [0u32; 19]; // Code length code lengths.
+    let mut clsymbols = [0u32; 19];
     calculate_bit_lengths(&clcounts, 19, 7, &mut clcl);
     if !size_only {
         lengths_to_symbols(&clcl, 19, 7, &mut clsymbols);
@@ -535,9 +534,6 @@ unsafe fn add_lz77_block(options: &Options,
                          expected_data_size: usize,
                          bp: &mut u8,
                          out: &mut Vec<u8>) {
-    let mut ll_symbols: [u32; 288] = uninitialized();
-    let mut d_symbols: [u32; 32] = uninitialized();
-
     add_bit(if is_final { 1 } else { 0 }, bp, out);
     add_bit(btype & 1, bp, out);
     add_bit((btype & 2) >> 1, bp, out);
@@ -561,7 +557,9 @@ unsafe fn add_lz77_block(options: &Options,
         }
     };
 
+    let mut ll_symbols = [0u32; 288];
     lengths_to_symbols(&ll_lengths, 288, 15, &mut ll_symbols);
+    let mut d_symbols = [0u32; 32];
     lengths_to_symbols(&d_lengths, 32, 15, &mut d_symbols);
 
     let detect_block_size: usize = out.len();
