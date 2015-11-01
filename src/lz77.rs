@@ -311,7 +311,7 @@ unsafe fn store_in_longest_match_cache(s: &mut BlockState,
  *     for convenience that the array is made 3 longer).
  */
 pub unsafe fn find_longest_match(s: &mut BlockState,
-                                 h: *const Hash,
+                                 h: &Hash,
                                  array: &[u8],
                                  pos: usize,
                                  size: usize,
@@ -328,10 +328,10 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
     // For quitting early.
     let mut chain_counter = MAX_CHAIN_HITS;
 
-    let mut hhead: *const i32 = (*h).head;
-    let mut hprev: *const u16 = (*h).prev;
-    let mut hhashval: *const i32 = (*h).hashval;
-    let mut hval: i32 = (*h).val;
+    let mut hhead: *const i32 = h.head;
+    let mut hprev: *const u16 = h.prev;
+    let mut hhashval: *const i32 = h.hashval;
+    let mut hval: i32 = h.val;
 
     if cfg!(feature = "longest-match-cache") {
         if try_get_from_longest_match_cache(s, pos, &mut limit, sublen, distance, length) {
@@ -386,7 +386,7 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
             // Testing the byte at position bestlength first, goes slightly faster.
             if pos + bestlength as usize >= size || *scan.offset(bestlength as isize) == *match_.offset(bestlength as isize) {
                 #[cfg(not(feature = "hash-same"))]
-                fn do_hash_same(_h: *const Hash,
+                fn do_hash_same(_h: &Hash,
                                 _pos: usize,
                                 _limit: usize,
                                 _scan: *mut *const u8,
@@ -395,15 +395,15 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
                 }
 
                 #[cfg(feature = "hash-same")]
-                unsafe fn do_hash_same(h: *const Hash,
+                unsafe fn do_hash_same(h: &Hash,
                                        pos: usize,
                                        limit: usize,
                                        scan: *mut *const u8,
                                        match_: *mut *const u8,
                                        dist: u32) {
-                    let same0: u16 = (*h).hash_same.same[pos & WINDOW_MASK];
+                    let same0: u16 = h.hash_same.same[pos & WINDOW_MASK];
                     if same0 > 2 && **scan == **match_ {
-                        let same1: u16 = (*h).hash_same.same[(pos - dist as usize) & WINDOW_MASK];
+                        let same1: u16 = h.hash_same.same[(pos - dist as usize) & WINDOW_MASK];
                         let mut same: u16 = if same0 < same1 { same0 } else { same1 };
                         if same as usize > limit {
                             same = limit as u16;
@@ -434,7 +434,7 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
         }
 
         #[cfg(not(feature = "hash-same-hash"))]
-        fn do_hash_same_hash(_h: *const Hash,
+        fn do_hash_same_hash(_h: &Hash,
                              _hhead: *mut *const i32,
                              _hprev: *mut *const u16,
                              _hhashval: *mut *const i32,
@@ -445,7 +445,7 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
         }
 
         #[cfg(feature = "hash-same-hash")]
-        unsafe fn do_hash_same_hash(h: *const Hash,
+        unsafe fn do_hash_same_hash(h: &Hash,
                                     hhead: *mut *const i32,
                                     hprev: *mut *const u16,
                                     hhashval: *mut *const i32,
@@ -454,12 +454,12 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
                                     hpos: u16,
                                     p: u16) {
             // Switch to the other hash once this will be more efficient.
-            if *hhead != (*h).hash_same_hash.head2 && bestlength >= (*h).hash_same.same[hpos as usize] && (*h).hash_same_hash.val2 == *(*h).hash_same_hash.hashval2.offset(p as isize) {
+            if *hhead != h.hash_same_hash.head2 && bestlength >= h.hash_same.same[hpos as usize] && h.hash_same_hash.val2 == *h.hash_same_hash.hashval2.offset(p as isize) {
                 // Now use the hash that encodes the length and first byte.
-                *hhead = (*h).hash_same_hash.head2;
-                *hprev = (*h).hash_same_hash.prev2;
-                *hhashval = (*h).hash_same_hash.hashval2;
-                *hval = (*h).hash_same_hash.val2;
+                *hhead = h.hash_same_hash.head2;
+                *hprev = h.hash_same_hash.prev2;
+                *hhashval = h.hash_same_hash.hashval2;
+                *hval = h.hash_same_hash.val2;
             }
         }
         do_hash_same_hash(h, &mut hhead, &mut hprev, &mut hhashval, &mut hval, bestlength, hpos, p);

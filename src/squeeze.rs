@@ -35,11 +35,11 @@ impl SymbolStats {
     }
 }
 
-unsafe fn copy_stats(source: *const SymbolStats, dest: *mut SymbolStats) {
-    (*dest).litlens = (*source).litlens;
-    (*dest).dists = (*source).dists;
-    (*dest).ll_symbols = (*source).ll_symbols;
-    (*dest).d_symbols = (*source).d_symbols;
+unsafe fn copy_stats(source: &SymbolStats, dest: *mut SymbolStats) {
+    (*dest).litlens = source.litlens;
+    (*dest).dists = source.dists;
+    (*dest).ll_symbols = source.ll_symbols;
+    (*dest).d_symbols = source.d_symbols;
 }
 
 /// Adds the bit lengths.
@@ -255,7 +255,7 @@ unsafe fn get_best_lengths(s: &mut BlockState,
         fn shortcut_long_repetitions(_in: &[u8], _instart: usize, _inend: usize, _costmodel: CostModelFun, _costcontext: *const c_void, _length_array: &Vec<u16>, _h: &Hash, _i: *const usize, _j: *const usize, _costs: &Vec<f32>) { }
         shortcut_long_repetitions(in_, instart, inend, costmodel, costcontext, length_array, &mut hash, &mut i, &mut j, &mut costs);
 
-        find_longest_match(s, &mut hash, in_, i, inend, MAX_MATCH, &mut sublen, &mut dist, &mut leng);
+        find_longest_match(s, &hash, in_, i, inend, MAX_MATCH, &mut sublen, &mut dist, &mut leng);
 
         // Literal.
         if i + 1 <= inend {
@@ -349,7 +349,7 @@ unsafe fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usi
             let mut dist: u16 = 0;
             // Get the distance by recalculating longest match. The found length
             // should match the length from the path.
-            find_longest_match(s, &mut hash, in_, pos, inend, length as usize, &mut None, &mut dist, &mut dummy_length);
+            find_longest_match(s, &hash, in_, pos, inend, length as usize, &mut None, &mut dist, &mut dummy_length);
             assert!(!(dummy_length != length && length > 2 && dummy_length > 2));
             verify_len_dist(in_, inend, pos, dist, length);
             store_litlen_dist(length, dist, store);
