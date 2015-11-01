@@ -68,13 +68,13 @@ impl HashSameHash {
     }
 
     #[cfg(not(feature = "hash-same-hash"))]
-    fn clean(_h: *const HashSameHash) { }
+    fn clean(_h: HashSameHash) { }
 
     #[cfg(feature = "hash-same-hash")]
-    unsafe fn clean(h: *const HashSameHash) {
-        free((*h).head2 as *mut c_void);
-        free((*h).prev2 as *mut c_void);
-        free((*h).hashval2 as *mut c_void);
+    unsafe fn clean(h: HashSameHash) {
+        free(h.head2 as *mut c_void);
+        free(h.prev2 as *mut c_void);
+        free(h.hashval2 as *mut c_void);
     }
 }
 
@@ -104,11 +104,11 @@ impl HashSame {
     }
 
     #[cfg(not(feature = "hash-same"))]
-    fn clean(_h: *const HashSame) { }
+    fn clean(_h: HashSame) { }
 
     #[cfg(feature = "hash-same")]
-    unsafe fn clean(h: *const HashSame) {
-        free((*h).same as *mut c_void);
+    unsafe fn clean(h: HashSame) {
+        free(h.same as *mut c_void);
     }
 }
 
@@ -144,69 +144,69 @@ impl Hash {
         }
     }
 
-    pub unsafe fn clean(h: *mut Hash) {
-        free((*h).head as *mut c_void);
-        free((*h).prev as *mut c_void);
-        free((*h).hashval as *mut c_void);
+    pub unsafe fn clean(h: Hash) {
+        free(h.head as *mut c_void);
+        free(h.prev as *mut c_void);
+        free(h.hashval as *mut c_void);
 
-        HashSameHash::clean(&(*h).hash_same_hash as *const _);
-        HashSame::clean(&(*h).hash_same as *const _);
+        HashSameHash::clean(h.hash_same_hash);
+        HashSame::clean(h.hash_same);
     }
 }
 
 /// Update the sliding hash value with the given byte. All calls to this function
 /// must be made on consecutive input characters. Since the hash value exists out
 /// of multiple input bytes, a few warmups with this function are needed initially.
-unsafe fn update_hash_value(h: *mut Hash, c: u8) {
-    (*h).val = (((*h).val << HASH_SHIFT) ^ c as i32) & HASH_MASK;
+unsafe fn update_hash_value(h: &mut Hash, c: u8) {
+    h.val = ((h.val << HASH_SHIFT) ^ c as i32) & HASH_MASK;
 }
 
 #[cfg(not(feature = "hash-same"))]
-fn update_hash_same(_array: &[u8], _pos: usize, _end: usize, _hpos: u16, _h: *mut Hash) { }
+fn update_hash_same(_array: &[u8], _pos: usize, _end: usize, _hpos: u16, _h: &mut Hash) { }
 
 #[cfg(feature = "hash-same")]
-unsafe fn update_hash_same(array: &[u8], pos: usize, end: usize, hpos: u16, h: *mut Hash) {
+unsafe fn update_hash_same(array: &[u8], pos: usize, end: usize, hpos: u16, h: &mut Hash) {
     let mut amount: usize = 0;
-    if *(*h).hash_same.same.offset((pos as isize - 1) & WINDOW_MASK as isize) > 1 {
-        amount = (*(*h).hash_same.same.offset(((pos - 1) & WINDOW_MASK) as isize) - 1) as usize;
+    if *h.hash_same.same.offset((pos as isize - 1) & WINDOW_MASK as isize) > 1 {
+        amount = (*h.hash_same.same.offset(((pos - 1) & WINDOW_MASK) as isize) - 1) as usize;
     }
     while pos + amount + 1 < end && array[pos] == array[(pos + amount + 1)] && amount < !0u16 as usize {
         amount += 1;
     }
-    *(*h).hash_same.same.offset(hpos as isize) = amount as u16;
+    *h.hash_same.same.offset(hpos as isize) = amount as u16;
 }
 
 #[cfg(not(feature = "hash-same-hash"))]
-fn update_hash_same_hash(_hpos: u16, _h: *mut Hash) { }
+fn update_hash_same_hash(_hpos: u16, _h: &mut Hash) { }
 
 #[cfg(feature = "hash-same-hash")]
-unsafe fn update_hash_same_hash(hpos: u16, h: *mut Hash) {
-    (*h).hash_same_hash.val2 = ((*(*h).hash_same.same.offset(hpos as isize) as i32 - MIN_MATCH as i32) & 255) ^ (*h).val;
-    *(*h).hash_same_hash.hashval2.offset(hpos as isize) = (*h).hash_same_hash.val2;
-    if *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) != -1 && *(*h).hash_same_hash.hashval2.offset(*(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) as isize) == (*h).hash_same_hash.val2 {
-        *(*h).hash_same_hash.prev2.offset(hpos as isize) = *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) as u16;
+unsafe fn update_hash_same_hash(hpos: u16, h: &mut Hash) {
+    h.hash_same_hash.val2 = ((*h.hash_same.same.offset(hpos as isize) as i32 - MIN_MATCH as i32) & 255) ^ h.val;
+    *h.hash_same_hash.hashval2.offset(hpos as isize) = h.hash_same_hash.val2;
+    if *h.hash_same_hash.head2.offset(h.hash_same_hash.val2 as isize) != -1 && *h.hash_same_hash.hashval2.offset(*h.hash_same_hash.head2.offset(h.hash_same_hash.val2 as isize) as isize) == h.hash_same_hash.val2 {
+        *h.hash_same_hash.prev2.offset(hpos as isize) = *h.hash_same_hash.head2.offset(h.hash_same_hash.val2 as isize) as u16;
     } else {
-        *(*h).hash_same_hash.prev2.offset(hpos as isize) = hpos;
+        *h.hash_same_hash.prev2.offset(hpos as isize) = hpos;
     }
-    *(*h).hash_same_hash.head2.offset((*h).hash_same_hash.val2 as isize) = hpos as i32;
+    *h.hash_same_hash.head2.offset(h.hash_same_hash.val2 as isize) = hpos as i32;
 }
 
-pub unsafe fn update_hash(array: &[u8], pos: usize, end: usize, h: *mut Hash) {
+pub unsafe fn update_hash(array: &[u8], pos: usize, end: usize, h: &mut Hash) {
     let hpos: u16 = pos as u16 & WINDOW_MASK as u16;
     update_hash_value(h, if pos + MIN_MATCH <= end { array[pos + MIN_MATCH - 1] } else { 0 });
-    *(*h).hashval.offset(hpos as isize) = (*h).val;
-    if *(*h).head.offset((*h).val as isize) != -1 && *(*h).hashval.offset(*(*h).head.offset((*h).val as isize) as isize) == (*h).val {
-        *(*h).prev.offset(hpos as isize) = *(*h).head.offset((*h).val as isize) as u16;
+    *h.hashval.offset(hpos as isize) = h.val;
+    if *h.head.offset(h.val as isize) != -1 && *h.hashval.offset(*h.head.offset(h.val as isize) as isize) == h.val {
+        *h.prev.offset(hpos as isize) = *h.head.offset(h.val as isize) as u16;
     } else {
-        *(*h).prev.offset(hpos as isize) = hpos;
+        *h.prev.offset(hpos as isize) = hpos;
     }
-    *(*h).head.offset((*h).val as isize) = hpos as i32;
+    *h.head.offset(h.val as isize) = hpos as i32;
 
     update_hash_same(array, pos, end, hpos, h);
     update_hash_same_hash(hpos, h);
 }
 
-pub unsafe fn warmup_hash(array: &[u8], pos: usize, end: usize, h: *mut Hash) {
+pub unsafe fn warmup_hash(array: &[u8], pos: usize, end: usize, h: &mut Hash) {
     update_hash_value(h, array[pos + 0]);
     if pos + 1 < end {
         update_hash_value(h, array[pos + 1]);

@@ -506,10 +506,9 @@ pub unsafe fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend:
     }
 
     let mut hash = Hash::new(WINDOW_SIZE);
-    let h: *mut Hash = &mut hash;
-    hash::warmup_hash(in_, windowstart, inend, h);
+    hash::warmup_hash(in_, windowstart, inend, &mut hash);
     for i in windowstart..instart {
-        hash::update_hash(in_, i, inend, h);
+        hash::update_hash(in_, i, inend, &mut hash);
     }
 
     // Lazy matching.
@@ -520,11 +519,11 @@ pub unsafe fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend:
 
     let mut i: usize = instart;
     while i < inend {
-        hash::update_hash(in_, i, inend, h);
+        hash::update_hash(in_, i, inend, &mut hash);
 
         let mut dist: u16 = 0;
         let mut leng: u16 = 0;
-        find_longest_match(s, h, in_, i, inend, MAX_MATCH, &mut dummysublen, &mut dist, &mut leng);
+        find_longest_match(s, &hash, in_, i, inend, MAX_MATCH, &mut dummysublen, &mut dist, &mut leng);
         let lengthscore: i32 = get_length_score(leng as i32, dist as i32);
 
         if cfg!(feature = "lazy-matching") {
@@ -551,7 +550,7 @@ pub unsafe fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend:
                     for _ in 2..leng {
                         assert!(i < inend);
                         i += 1;
-                        hash::update_hash(in_, i, inend, h);
+                        hash::update_hash(in_, i, inend, &mut hash);
                     }
                     i += 1;
                     continue;
@@ -577,12 +576,12 @@ pub unsafe fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend:
         for _ in 1..leng {
             assert!(i < inend);
             i += 1;
-            hash::update_hash(in_, i, inend, h);
+            hash::update_hash(in_, i, inend, &mut hash);
         }
         i += 1;
     }
 
-    hash::Hash::clean(h);
+    hash::Hash::clean(hash);
 }
 
 /**

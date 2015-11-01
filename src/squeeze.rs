@@ -217,10 +217,9 @@ unsafe fn get_best_lengths(s: &mut BlockState,
     let mut costs: Vec<f32> = iter::repeat(LARGE_FLOAT as f32).take(blocksize + 1).collect();
 
     let mut hash = Hash::new(WINDOW_SIZE);
-    let h: *mut Hash = &mut hash;
-    warmup_hash(in_, windowstart, inend, h);
+    warmup_hash(in_, windowstart, inend, &mut hash);
     for i in windowstart..instart {
-        update_hash(in_, i, inend, h);
+        update_hash(in_, i, inend, &mut hash);
     }
 
     costs[0] = 0f32; // Because it's the start.
@@ -229,10 +228,10 @@ unsafe fn get_best_lengths(s: &mut BlockState,
     let mut i: usize = instart;
     while i < inend {
         let mut j: usize = i - instart; // Index in the costs array and length_array.
-        update_hash(in_, i, inend, h);
+        update_hash(in_, i, inend, &mut hash);
 
         #[cfg(feature = "shortcut-long-repetitions")]
-        unsafe fn shortcut_long_repetitions(in_: &[u8], instart: usize, inend: usize, costmodel: CostModelFun, costcontext: *const c_void, length_array: &mut Vec<u16>, h: *mut Hash, i: *mut usize, j: *mut usize, costs: &mut Vec<f32>) {
+        unsafe fn shortcut_long_repetitions(in_: &[u8], instart: usize, inend: usize, costmodel: CostModelFun, costcontext: *const c_void, length_array: &mut Vec<u16>, h: &mut Hash, i: *mut usize, j: *mut usize, costs: &mut Vec<f32>) {
             use util::WINDOW_MASK;
             // If we're in a long repetition of the same character and have more than
             // ZOPFLI_MAX_MATCH characters before and after our position.
@@ -254,10 +253,10 @@ unsafe fn get_best_lengths(s: &mut BlockState,
                 }
         }
         #[cfg(not(feature = "shortcut-long-repetitions"))]
-        fn shortcut_long_repetitions(_in: &[u8], _instart: usize, _inend: usize, _costmodel: CostModelFun, _costcontext: *const c_void, _length_array: &Vec<u16>, _h: *const Hash, _i: *const usize, _j: *const usize, _costs: &Vec<f32>) { }
-        shortcut_long_repetitions(in_, instart, inend, costmodel, costcontext, length_array, h, &mut i, &mut j, &mut costs);
+        fn shortcut_long_repetitions(_in: &[u8], _instart: usize, _inend: usize, _costmodel: CostModelFun, _costcontext: *const c_void, _length_array: &Vec<u16>, _h: &Hash, _i: *const usize, _j: *const usize, _costs: &Vec<f32>) { }
+        shortcut_long_repetitions(in_, instart, inend, costmodel, costcontext, length_array, &mut hash, &mut i, &mut j, &mut costs);
 
-        find_longest_match(s, h, in_, i, inend, MAX_MATCH, &mut sublen, &mut dist, &mut leng);
+        find_longest_match(s, &mut hash, in_, i, inend, MAX_MATCH, &mut sublen, &mut dist, &mut leng);
 
         // Literal.
         if i + 1 <= inend {
@@ -295,7 +294,7 @@ unsafe fn get_best_lengths(s: &mut BlockState,
     assert!(costs[blocksize] >= 0f32);
     result = costs[blocksize] as f64;
 
-    Hash::clean(h);
+    Hash::clean(hash);
 
     result
 }
@@ -333,10 +332,9 @@ unsafe fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usi
     }
 
     let mut hash = Hash::new(WINDOW_SIZE);
-    let h: *mut Hash = &mut hash;
-    warmup_hash(in_, windowstart, inend, h);
+    warmup_hash(in_, windowstart, inend, &mut hash);
     for i in windowstart..instart {
-        update_hash(in_, i, inend, h);
+        update_hash(in_, i, inend, &mut hash);
     }
 
     let mut pos: usize = instart;
@@ -346,13 +344,13 @@ unsafe fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usi
         let mut dist: u16 = uninitialized();
         assert!(pos < inend);
 
-        update_hash(in_, pos, inend, h);
+        update_hash(in_, pos, inend, &mut hash);
 
         // Add to output.
         if length as usize >= MIN_MATCH {
             // Get the distance by recalculating longest match. The found length
             // should match the length from the path.
-            find_longest_match(s, h, in_, pos, inend, length as usize, &mut None, &mut dist, &mut dummy_length);
+            find_longest_match(s, &mut hash, in_, pos, inend, length as usize, &mut None, &mut dist, &mut dummy_length);
             assert!(!(dummy_length != length && length > 2 && dummy_length > 2));
             verify_len_dist(in_, inend, pos, dist, length);
             store_litlen_dist(length, dist, store);
@@ -365,13 +363,13 @@ unsafe fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usi
 
         assert!(pos + length as usize <= inend);
         for j in 1..length {
-            update_hash(in_, pos + j as usize, inend, h);
+            update_hash(in_, pos + j as usize, inend, &mut hash);
         }
 
         pos += length as usize;
     }
 
-    Hash::clean(h);
+    Hash::clean(hash);
 }
 
 /// Calculates the entropy of the statistics
