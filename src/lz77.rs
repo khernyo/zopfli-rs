@@ -595,28 +595,25 @@ pub unsafe fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend:
  *     standard)
  * d_count: count of each dist symbol, must have size 32 (see deflate standard)
  */
-pub unsafe fn lz77_counts(litlens: &Vec<u16>,
-                          dists: &Vec<u16>,
-                          start: usize,
-                          end: usize,
-                          ll_count: *mut usize,
-                          d_count: *mut usize) {
-    for i in 0..288 {
-        *ll_count.offset(i) = 0;
-    }
-    for i in 0..32 {
-        *d_count.offset(i) = 0;
-    }
+pub fn lz77_counts(litlens: &Vec<u16>,
+                   dists: &Vec<u16>,
+                   start: usize,
+                   end: usize)
+                   -> ([usize; 288], [usize; 32]) {
+    let mut ll_counts: [usize; 288] = [0usize; 288];
+    let mut d_counts: [usize; 32] = [0usize; 32];
 
     for i in start..end {
         if dists[i] == 0 {
-            *ll_count.offset(litlens[i] as isize) += 1;
+            ll_counts[litlens[i] as usize] += 1;
         } else {
-            *ll_count.offset(util::get_length_symbol(litlens[i] as i32) as isize) += 1;
-            *d_count.offset(util::get_dist_symbol(dists[i] as i32) as isize) += 1;
+            ll_counts[util::get_length_symbol(litlens[i] as i32) as usize] += 1;
+            d_counts[util::get_dist_symbol(dists[i] as i32) as usize] += 1;
         }
     }
 
     // End symbol.
-    *ll_count.offset(256) = 1;
+    ll_counts[256] = 1;
+
+    (ll_counts, d_counts)
 }

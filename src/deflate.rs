@@ -380,14 +380,15 @@ fn abs_diff(x: usize, y: usize) -> usize {
 /// Change the population counts in a way that the consequent Hufmann tree
 /// compression, especially its rle-part will be more likely to compress this data
 /// more efficiently. length containts the size of the histogram.
-unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
+fn optimize_huffman_for_rle(counts: &mut [usize]) {
+    let mut length: i32 = counts.len() as i32;
     // 1) We don't want to touch the trailing zeros. We may break the
     // rules of the format by adding more data in the distance codes.
     while length >= 0 {
         if length == 0 {
             return;
         }
-        if *counts.offset(length as isize - 1) != 0 {
+        if counts[length as usize - 1] != 0 {
             // Now counts[0..length - 1] does not have trailing zeros.
             break;
         }
@@ -400,10 +401,10 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
     // Let's not spoil any of the existing good rle codes.
     // Mark any seq of 0's that is longer than 5 as a good_for_rle.
     // Mark any seq of non-0's that is longer than 7 as a good_for_rle.
-    let mut symbol: usize = *counts.offset(0);
+    let mut symbol: usize = counts[0];
     let mut stride: i32 = 0;
     for i in 0..length + 1 {
-        if i == length || *counts.offset(i as isize) != symbol {
+        if i == length || counts[i as usize] != symbol {
             if (symbol == 0 && stride >= 5) || (symbol != 0 && stride >= 7) {
                 for k in 0..stride {
                     good_for_rle[i as usize - k as usize - 1] = true;
@@ -411,7 +412,7 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
             }
             stride = 1;
             if i != length {
-                symbol = *counts.offset(i as isize);
+                symbol = counts[i as usize];
             }
         } else {
             stride += 1;
@@ -420,12 +421,12 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
 
     // 3) Let's replace those population counts that lead to more rle codes.
     stride = 0;
-    let mut limit: usize = *counts.offset(0);
+    let mut limit: usize = counts[0];
     let mut sum: usize = 0;
     for i in 0..length+1 {
         if i == length || good_for_rle[i as usize]
             // Heuristic for selecting the stride ranges to collapse.
-            || abs_diff(*counts.offset(i as isize), limit) >= 4 {
+            || abs_diff(counts[i as usize], limit) >= 4 {
                 if stride >= 4 || (stride >= 3 && sum == 0) {
                     // The stride must end, collapse what we have, if we have enough (4).
                     let mut count: i32 = ((sum + stride as usize / 2) / stride as usize) as i32;
@@ -439,7 +440,7 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
                     for k in 0..stride {
                         // We don't want to change value at counts[i],
                         // that is already belonging to the next stride. Thus - 1.
-                        *counts.offset(i as isize - k as isize - 1) = count as usize;
+                        counts[i as usize - k as usize - 1] = count as usize;
                     }
                 }
                 stride = 0;
@@ -447,16 +448,16 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
                 if i < length - 3 {
                     // All interesting strides have a count of at least 4,
                     // at least when non-zeros.
-                    limit = (*counts.offset(i as isize) + *counts.offset(i as isize + 1) + *counts.offset(i as isize + 2) + *counts.offset(i as isize + 3) + 2) / 4;
+                    limit = (counts[i as usize] + counts[i as usize + 1] + counts[i as usize + 2] + counts[i as usize + 3] + 2) / 4;
                 } else if i < length {
-                    limit = *counts.offset(i as isize);
+                    limit = counts[i as usize];
                 } else {
                     limit = 0;
                 }
             }
         stride += 1;
         if i != length {
-            sum += *counts.offset(i as isize);
+            sum += counts[i as usize];
         }
     }
 }
@@ -471,12 +472,9 @@ unsafe fn get_dynamic_lengths(litlens: &Vec<u16>,
                               lend: usize,
                               ll_lengths: &mut [u32],
                               d_lengths: &mut [u32]) {
-    let mut ll_counts: [usize; 288] = uninitialized();
-    let mut d_counts: [usize; 32] = uninitialized();
-
-    lz77_counts(litlens, dists, lstart, lend, ll_counts.as_mut_ptr(), d_counts.as_mut_ptr());
-    optimize_huffman_for_rle(288, ll_counts.as_mut_ptr());
-    optimize_huffman_for_rle(32, d_counts.as_mut_ptr());
+    let (mut ll_counts, mut d_counts) = lz77_counts(litlens, dists, lstart, lend);
+    optimize_huffman_for_rle(&mut ll_counts);
+    optimize_huffman_for_rle(&mut d_counts);
     calculate_bit_lengths(&ll_counts, 288, 15, ll_lengths);
     calculate_bit_lengths(&d_counts, 32, 15, d_lengths);
     patch_distance_codes_for_buggy_decoders(d_lengths);
