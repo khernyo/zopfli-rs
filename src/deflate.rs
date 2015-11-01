@@ -284,47 +284,38 @@ unsafe fn calculate_tree_size(ll_lengths: &[u32; 288], d_lengths: &[u32; 32]) ->
 /// Adds all lit/len and dist codes from the lists as huffman symbols. Does not add
 /// end code 256. expected_data_size is the uncompressed block size, used for
 /// assert, but you can set it to 0 to not do the assertion.
-unsafe fn add_lz77_data(litlens: &Vec<u16>,
-                        dists: &Vec<u16>,
-                        lstart: usize,
-                        lend: usize,
-                        expected_data_size: usize,
-                        ll_symbols: *const u32,
-                        ll_lengths: *const u32,
-                        d_symbols: *const u32,
-                        d_lengths: *const u32,
-                        bp: &mut u8,
-                        out: &mut Vec<u8>) {
+fn add_lz77_data(litlens: &Vec<u16>,
+                 dists: &Vec<u16>,
+                 lstart: usize,
+                 lend: usize,
+                 expected_data_size: usize,
+                 ll_symbols: &[u32; 288],
+                 ll_lengths: &[u32; 288],
+                 d_symbols: &[u32; 32],
+                 d_lengths: &[u32; 32],
+                 bp: &mut u8,
+                 out: &mut Vec<u8>) {
     let mut testlength: usize = 0;
     for i in lstart..lend {
         let dist: u32 = dists[i] as u32;
         let litlen: u32 = litlens[i] as u32;
         if dist == 0 {
             assert!(litlen < 256);
-            assert!(*ll_lengths.offset(litlen as isize) > 0);
-            add_huffman_bits(*ll_symbols.offset(litlen as isize),
-                             *ll_lengths.offset(litlen as isize),
-                             bp,
-                             out);
+            assert!(ll_lengths[litlen as usize] > 0);
+            add_huffman_bits(ll_symbols[litlen as usize], ll_lengths[litlen as usize], bp, out);
             testlength += 1;
         } else {
             let lls: u32 = get_length_symbol(litlen as i32) as u32;
             let ds: u32 = get_dist_symbol(dist as i32) as u32;
             assert!(litlen >= 3 && litlen <= 288);
-            assert!(*ll_lengths.offset(lls as isize) > 0);
-            assert!(*d_lengths.offset(ds as isize) > 0);
-            add_huffman_bits(*ll_symbols.offset(lls as isize),
-                             *ll_lengths.offset(lls as isize),
-                             bp,
-                             out);
+            assert!(ll_lengths[lls as usize] > 0);
+            assert!(d_lengths[ds as usize] > 0);
+            add_huffman_bits(ll_symbols[lls as usize], ll_lengths[lls as usize], bp, out);
             add_bits(get_length_extra_bits_value(litlen as i32) as u32,
                      get_length_extra_bits(litlen as i32) as u32,
                      bp,
                      out);
-            add_huffman_bits(*d_symbols.offset(ds as isize),
-                             *d_lengths.offset(ds as isize),
-                             bp,
-                             out);
+            add_huffman_bits(d_symbols[ds as usize], d_lengths[ds as usize], bp, out);
             add_bits(get_dist_extra_bits_value(dist as i32) as u32,
                      get_dist_extra_bits(dist as i32) as u32,
                      bp,
@@ -574,7 +565,7 @@ unsafe fn add_lz77_block(options: &Options,
     lengths_to_symbols(&d_lengths, 32, 15, &mut d_symbols);
 
     let detect_block_size: usize = out.len();
-    add_lz77_data(litlens, dists, lstart, lend, expected_data_size, ll_symbols.as_ptr(), ll_lengths.as_ptr(), d_symbols.as_ptr(), d_lengths.as_ptr(), bp, out);
+    add_lz77_data(litlens, dists, lstart, lend, expected_data_size, &ll_symbols, &ll_lengths, &d_symbols, &d_lengths, bp, out);
 
     // End symbol.
     add_huffman_bits(ll_symbols[256], ll_lengths[256], bp, out);
