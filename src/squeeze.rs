@@ -323,7 +323,7 @@ fn trace_backwards(size: usize, length_array: &Vec<u16>, path: &mut Vec<u16>) {
     path.reverse();
 }
 
-unsafe fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usize, path: &Vec<u16>, store: *mut LZ77Store) {
+unsafe fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usize, path: &Vec<u16>, store: &mut LZ77Store) {
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
 
     let mut _total_length_test: usize = 0;
@@ -375,22 +375,22 @@ unsafe fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usi
 }
 
 /// Calculates the entropy of the statistics
-unsafe fn calculate_statistics(stats: *mut SymbolStats) {
-    calculate_entropy(&(*stats).litlens, &mut (*stats).ll_symbols);
-    calculate_entropy(&(*stats).dists, &mut (*stats).d_symbols);
+fn calculate_statistics(stats: &mut SymbolStats) {
+    calculate_entropy(&stats.litlens, &mut stats.ll_symbols);
+    calculate_entropy(&stats.dists, &mut stats.d_symbols);
 }
 
 /// Appends the symbol statistics from the store.
-unsafe fn get_statistics(store: *const LZ77Store, stats: *mut SymbolStats) {
-    for i in 0..(*store).litlens.len() {
-        if (*store).dists[i] == 0 {
-            (*stats).litlens[(*store).litlens[i] as usize] += 1;
+fn get_statistics(store: &LZ77Store, stats: &mut SymbolStats) {
+    for i in 0..store.litlens.len() {
+        if store.dists[i] == 0 {
+            stats.litlens[store.litlens[i] as usize] += 1;
         } else {
-            (*stats).litlens[get_length_symbol((*store).litlens[i] as i32) as usize] += 1;
-            (*stats).dists[get_dist_symbol((*store).dists[i] as i32) as usize] += 1;
+            stats.litlens[get_length_symbol(store.litlens[i] as i32) as usize] += 1;
+            stats.dists[get_dist_symbol(store.dists[i] as i32) as usize] += 1;
         }
     }
-    (*stats).litlens[256] = 1; // End Symbol.
+    stats.litlens[256] = 1; // End Symbol.
 
     calculate_statistics(stats);
 }
@@ -420,7 +420,7 @@ unsafe fn lz77_optimal_run(s: &mut BlockState,
                            length_array: &mut Vec<u16>,
                            costmodel: CostModelFun,
                            costcontext: *const c_void,
-                           store: *mut LZ77Store)
+                           store: &mut LZ77Store)
                            -> f64 {
     let cost: f64 = get_best_lengths(s, in_, instart, inend, costmodel, costcontext, length_array);
     path.clear();
@@ -509,7 +509,7 @@ pub unsafe fn lz77_optimal_fixed(s: &mut BlockState,
                                  in_: &[u8],
                                  instart: usize,
                                  inend: usize,
-                                 store: *mut LZ77Store) {
+                                 store: &mut LZ77Store) {
     // Dist to get to here with smallest cost.
     let blocksize: usize = inend - instart;
     let mut length_array: Vec<u16> = iter::repeat(0).take(blocksize + 1).collect();
