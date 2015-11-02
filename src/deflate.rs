@@ -352,7 +352,7 @@ fn abs_diff(x: usize, y: usize) -> usize {
     }
 }
 
-/// Change the population counts in a way that the consequent Hufmann tree
+/// Change the population counts in a way that the consequent Huffman tree
 /// compression, especially its rle-part will be more likely to compress this data
 /// more efficiently. length containts the size of the histogram.
 unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
@@ -795,12 +795,13 @@ pub unsafe fn deflate(options: *const Options, btype: i32, is_final: bool, input
         deflate_part(options, btype, is_final, input, 0, insize, bp, out, outsize);
     } else {
         let mut i: usize = 0;
-        while i < insize {
+        loop {
             let masterfinal: bool = i + util::MASTER_BLOCK_SIZE >= insize;
             let final2: bool = is_final && masterfinal;
             let size: usize = if masterfinal { insize - i } else { util::MASTER_BLOCK_SIZE };
             deflate_part(options, btype, final2, input, i, i + size, bp, out, outsize);
             i += size;
+            if i < insize { break }
         }
     }
 

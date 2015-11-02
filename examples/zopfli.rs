@@ -86,8 +86,7 @@ Usage: zopfli [OPTION]... FILE...
 unsafe fn compress_file(options: *const Options, output_type: Format, infilename: &str, outfilename: Option<String>) {
     let mut input: *mut u8 = null_mut();
     let mut insize: usize = 0;
-    load_file(infilename, &mut input, &mut insize);
-    if insize == 0 {
+    if !load_file(infilename, &mut input, &mut insize) {
         println_err!("Invalid filename: {}", infilename);
     } else {
         let mut output: *mut u8 = null_mut();
@@ -104,8 +103,10 @@ unsafe fn compress_file(options: *const Options, output_type: Format, infilename
     }
 }
 
-unsafe fn load_file(filename: &str, buf: *mut *mut u8, size: *mut usize) {
-    let mut f = File::open(filename).unwrap();
+unsafe fn load_file(filename: &str, buf: *mut *mut u8, size: *mut usize) -> bool {
+    let f = File::open(filename);
+    if f.is_err() { return false; }
+    let mut f = f.unwrap();
     *size = f.metadata().unwrap().len() as usize;
     if *size > 2147483647 {
         println_err!("Files larger than 2GB are not supported.");
@@ -115,6 +116,7 @@ unsafe fn load_file(filename: &str, buf: *mut *mut u8, size: *mut usize) {
     assert_eq!(f.read_to_end(&mut b).unwrap(), *size);
     *buf = malloc(*size as size_t) as *mut u8;
     ptr::copy_nonoverlapping(b.as_ptr(), *buf, *size);
+    true
 }
 
 unsafe fn save_file(filename: &str, buf: *mut u8, size: usize) {

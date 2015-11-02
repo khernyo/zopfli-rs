@@ -43,8 +43,8 @@ unsafe fn update_crc(crc: u64, buf: *const u8, len: usize) -> u64 {
 }
 
 /// Returns the CRC of the bytes buf[0..len-1].
-unsafe fn crc(buf: *const u8, len: i32) -> u64 {
-    update_crc(0u64, buf, len as usize)
+unsafe fn crc(buf: *const u8, len: usize) -> u64 {
+    update_crc(0u64, buf, len)
 }
 
 /**
@@ -57,7 +57,7 @@ unsafe fn crc(buf: *const u8, len: i32) -> u64 {
  * outsize: pointer to the dynamic output array size.
  */
 pub unsafe fn compress(options: *const Options, input: *const u8, insize: usize, out: *mut *mut u8, outsize: *mut usize) {
-    let crcvalue: u64 = crc(input, insize as i32);
+    let crcvalue: u64 = crc(input, insize);
     let mut bp: u8 = 0;
 
     append_data!(31, *out, *outsize); // ID1
