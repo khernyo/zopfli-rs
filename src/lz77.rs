@@ -14,11 +14,11 @@ use super::cache;
 use cache::LongestMatchCache;
 
 use super::hash;
-use super::util;
 use super::Options;
 
 use hash::Hash;
-use util::{MIN_MATCH, MAX_MATCH, MAX_CHAIN_HITS, WINDOW_MASK, WINDOW_SIZE};
+use util::{get_length_symbol, get_dist_symbol,
+    MIN_MATCH, MAX_MATCH, MAX_CHAIN_HITS, NUM_D, NUM_LL, WINDOW_MASK, WINDOW_SIZE};
 
 /// Stores lit/length and dist pairs for LZ77.
 /// Parameter litlens: Contains the literal symbols or length values.
@@ -34,26 +34,57 @@ pub struct LZ77Store {
     /// if > 0: length in corresponding litlens, this is the distance.
     pub dists: *mut u16,
     pub size: usize,
+
+    /// original data
+    pub data: *const u8,
+    pub pos: *mut usize,
+
+    ll_symbol: *mut u16,
+    d_symbol: *mut u16,
+
+    /// Cumulative histograms wrapping around per chunk. Each chunk has the amount
+    /// of distinct symbols as length, so using 1 value per LZ77 symbol, we have a
+    /// precise histogram at every N symbols, and the rest can be calculated by
+    /// looping through the actual symbols of this chunk.
+    ll_counts: *mut usize,
+    d_counts: *mut usize,
 }
 
 impl LZ77Store {
-    pub fn new() -> LZ77Store {
+    pub fn new(data: *const u8) -> LZ77Store {
         LZ77Store {
             litlens: null_mut(),
             dists: null_mut(),
             size: 0,
+            pos: null_mut(),
+            data: data,
+            ll_symbol: null_mut(),
+            d_symbol: null_mut(),
+            ll_counts: null_mut(),
+            d_counts: null_mut(),
         }
     }
 
-    pub unsafe fn init(store: *mut LZ77Store) {
+    pub unsafe fn init(data: *const u8, store: *mut LZ77Store) {
         (*store).litlens = null_mut();
         (*store).dists = null_mut();
         (*store).size = 0;
+        (*store).pos = null_mut();
+        (*store).data = data;
+        (*store).ll_symbol = null_mut();
+        (*store).d_symbol = null_mut();
+        (*store).ll_counts = null_mut();
+        (*store).d_counts = null_mut();
     }
 
     pub unsafe fn clean(store: *mut LZ77Store) {
         free((*store).litlens as *mut c_void);
         free((*store).dists as *mut c_void);
+        free((*store).pos as *mut c_void);
+        free((*store).ll_symbol as *mut c_void);
+        free((*store).d_symbol as *mut c_void);
+        free((*store).ll_counts as *mut c_void);
+        free((*store).d_counts as *mut c_void);
     }
 }
 
@@ -74,17 +105,17 @@ pub struct BlockState {
 
 impl BlockState {
     #[cfg(feature = "longest-match-cache")]
-    pub fn new(options: *const Options, blockstart: usize, blockend: usize, lmc: *mut LongestMatchCache) -> BlockState {
+    pub unsafe fn new(options: *const Options, blockstart: usize, blockend: usize, add_lmc: bool) -> BlockState {
         BlockState {
             options: options,
             blockstart: blockstart,
             blockend: blockend,
-            lmc: lmc,
+            lmc: if add_lmc { LongestMatchCache::new(blockend - blockstart) } else { null_mut() },
         }
     }
 
     #[cfg(not(feature = "longest-match-cache"))]
-    pub fn new(options: *const Options, blockstart: usize, blockend: usize, _lmc: *mut ()) -> BlockState {
+    pub fn new(options: *const Options, blockstart: usize, blockend: usize, _add_lmc: bool) -> BlockState {
         BlockState {
             options: options,
             blockstart: blockstart,
@@ -93,35 +124,183 @@ impl BlockState {
     }
 }
 
-pub unsafe fn clean_lz77_store(store: *mut LZ77Store) {
-    free((*store).litlens as *mut c_void);
-    free((*store).dists as *mut c_void);
+fn ceil_div(a: usize, b: usize) -> usize {
+    (a + b - 1) / b
 }
 
 pub unsafe fn copy_lz77_store(source: *const LZ77Store, dest: *mut LZ77Store) {
-    clean_lz77_store(dest);
+    let llsize: usize = NUM_LL * ceil_div((*source).size, NUM_LL);
+    let dsize: usize = NUM_D * ceil_div((*source).size, NUM_D);
+    LZ77Store::clean(dest);
+    LZ77Store::init((*source).data, dest);
     (*dest).litlens = malloc((size_of_val(&*(*dest).litlens) * (*source).size) as size_t) as *mut u16;
     (*dest).dists = malloc((size_of_val(&*(*dest).dists) * (*source).size) as size_t) as *mut u16;
+    (*dest).pos = malloc((size_of_val(&*(*dest).pos) * (*source).size) as size_t) as *mut usize;
+    (*dest).ll_symbol = malloc((size_of_val(&*(*dest).ll_symbol) * (*source).size) as size_t) as *mut u16;
+    (*dest).d_symbol = malloc((size_of_val(&*(*dest).d_symbol) * (*source).size) as size_t) as *mut u16;
+    (*dest).ll_counts = malloc((size_of_val(&*(*dest).ll_counts) * llsize) as size_t) as *mut usize;
+    (*dest).d_counts = malloc((size_of_val(&*(*dest).d_counts) * dsize) as size_t) as *mut usize;
 
-    if (*dest).litlens == null_mut() || (*dest).dists == null_mut() {
-        // Allocation failed.
-        std::process::exit(-1);
-    }
+    // Allocation failed.
+    if (*dest).litlens == null_mut() || (*dest).dists == null_mut() { std::process::exit(-1); }
+    if (*dest).pos == null_mut() { std::process::exit(-1); }
+    if (*dest).ll_symbol == null_mut() || (*dest).d_symbol == null_mut() { std::process::exit(-1); }
+    if (*dest).ll_counts == null_mut() || (*dest).d_counts == null_mut() { std::process::exit(-1); }
 
     (*dest).size = (*source).size;
     for i in 0..(*source).size {
         *(*dest).litlens.offset(i as isize) = *(*source).litlens.offset(i as isize);
         *(*dest).dists.offset(i as isize) = *(*source).dists.offset(i as isize);
+        *(*dest).pos.offset(i as isize) = *(*source).pos.offset(i as isize);
+        *(*dest).ll_symbol.offset(i as isize) = *(*source).ll_symbol.offset(i as isize);
+        *(*dest).d_symbol.offset(i as isize) = *(*source).d_symbol.offset(i as isize);
+    }
+    for i in 0..llsize {
+        *(*dest).ll_counts.offset(i as isize) = *(*source).ll_counts.offset(i as isize);
+    }
+    for i in 0..dsize {
+        *(*dest).d_counts.offset(i as isize) = *(*source).d_counts.offset(i as isize);
     }
 }
 
 /// Appends the length and distance to the LZ77 arrays of the ZopfliLZ77Store.
 /// context must be a ZopfliLZ77Store*.
-pub unsafe fn store_litlen_dist(length: u16, dist: u16, store: *mut LZ77Store) {
+pub unsafe fn store_litlen_dist(length: u16, dist: u16, pos: usize, store: *mut LZ77Store) {
     // Needed for using ZOPFLI_APPEND_DATA twice.
-    let mut size2: usize = (*store).size;
+    let origsize: usize = (*store).size;
+    let llstart: usize = NUM_LL * (origsize / NUM_LL);
+    let dstart: usize = NUM_D * (origsize / NUM_D);
+
+    // Everytime the index wraps around, a new cumulative histogram is made: we're
+    // keeping one histogram value per LZ77 symbol rather than a full histogram for
+    // each to save memory.
+    if origsize % NUM_LL == 0 {
+        let mut llsize: usize = origsize;
+        for i in 0..NUM_LL {
+            append_data!(
+                if origsize == 0 { 0 } else { *(*store).ll_counts.offset((origsize - NUM_LL + i) as isize) },
+                (*store).ll_counts, llsize);
+        }
+    }
+    if origsize % NUM_D == 0 {
+        let mut dsize: usize = origsize;
+        for i in 0..NUM_D {
+            append_data!(
+                if origsize == 0 { 0 } else { *(*store).d_counts.offset((origsize - NUM_D + i) as isize) },
+                (*store).d_counts, dsize);
+        }
+    }
+
     append_data!(length, (*store).litlens, (*store).size);
-    append_data!(dist, (*store).dists, size2);
+    (*store).size = origsize;
+    append_data!(dist, (*store).dists, (*store).size);
+    (*store).size = origsize;
+    append_data!(pos, (*store).pos, (*store).size);
+    assert!(length < 259);
+
+    if dist == 0 {
+        (*store).size = origsize;
+        append_data!(length, (*store).ll_symbol, (*store).size);
+        (*store).size = origsize;
+        append_data!(0, (*store).d_symbol, (*store).size);
+        *(*store).ll_counts.offset((llstart + length as usize) as isize) += 1;
+    } else {
+        (*store).size = origsize;
+        append_data!(get_length_symbol(length as i32) as u16, (*store).ll_symbol, (*store).size);
+        (*store).size = origsize;
+        append_data!(get_dist_symbol(dist as i32) as u16, (*store).d_symbol, (*store).size);
+        *(*store).ll_counts.offset((llstart + get_length_symbol(length as i32) as usize) as isize) += 1;
+        *(*store).d_counts.offset((dstart + get_dist_symbol(dist as i32) as usize) as isize) += 1;
+    }
+}
+
+pub unsafe fn append_lz77_store(store: *const LZ77Store, target: *mut LZ77Store) {
+    for i in 0..(*store).size {
+        store_litlen_dist(*(*store).litlens.offset(i as isize), *(*store).dists.offset(i as isize), *(*store).pos.offset(i as isize), target);
+    }
+}
+
+/// Gets the amount of raw bytes that this range of LZ77 symbols spans.
+pub unsafe fn lz77_get_byte_range(lz77: *const LZ77Store, lstart: usize, lend: usize) -> usize {
+    if lstart == lend {
+        0
+    } else {
+        let l: usize = lend - 1;
+        *(*lz77).pos.offset(l as isize) + (if *(*lz77).dists.offset(l as isize) == 0 { 1 } else { *(*lz77).litlens.offset(l as isize) }) as usize - *(*lz77).pos.offset(lstart as isize)
+    }
+}
+
+unsafe fn lz77_get_histogram_at(lz77: *const LZ77Store, lpos: usize, ll_counts: *mut usize, d_counts: *mut usize) {
+    // The real histogram is created by using the histogram for this chunk, but
+    // all superfluous values of this chunk subtracted.
+    let llpos: usize = NUM_LL * (lpos / NUM_LL);
+    let dpos: usize = NUM_D * (lpos / NUM_D);
+    for i in 0..NUM_LL {
+        *ll_counts.offset(i as isize) = *(*lz77).ll_counts.offset((llpos + i) as isize);
+    }
+    let mut i: usize = lpos + 1;
+    while i < llpos + NUM_LL && i < (*lz77).size {
+        *ll_counts.offset(*(*lz77).ll_symbol.offset(i as isize) as isize) -= 1;
+        i += 1;
+    }
+    for i in 0..NUM_D {
+        *d_counts.offset(i as isize) = *(*lz77).d_counts.offset((dpos + i) as isize);
+    }
+    let mut i: usize = lpos + 1;
+    while i < dpos + NUM_D && i < (*lz77).size {
+        if *(*lz77).dists.offset(i as isize) != 0 {
+            *d_counts.offset(*(*lz77).d_symbol.offset(i as isize) as isize) -= 1;
+        }
+        i += 1;
+    }
+}
+
+/// Gets the histogram of lit/len and dist symbols in the given range, using the
+/// cumulative histograms, so faster than adding one by one for large range. Does
+/// not add the one end symbol of value 256.
+pub unsafe fn lz77_get_histogram(lz77: *const LZ77Store, lstart: usize, lend: usize, ll_counts: *mut usize, d_counts: *mut usize) {
+    if lstart + NUM_LL * 3 > lend {
+        for i in 0..NUM_LL {
+            *ll_counts.offset(i as isize) = 0;
+        }
+        for i in 0..NUM_D {
+            *d_counts.offset(i as isize) = 0;
+        }
+        for i in lstart..lend {
+            *ll_counts.offset(*(*lz77).ll_symbol.offset(i as isize) as isize) += 1;
+            if *(*lz77).dists.offset(i as isize) != 0 {
+                *d_counts.offset(*(*lz77).d_symbol.offset(i as isize) as isize) += 1;
+            }
+        }
+    } else {
+        // Subtract the cumulative histograms at the end and the start to get the
+        // histogram for this range.
+        lz77_get_histogram_at(lz77, lend - 1, ll_counts, d_counts);
+        if lstart > 0 {
+            let mut ll_counts2: [usize; NUM_LL] = uninitialized();
+            let mut d_counts2: [usize; NUM_D] = uninitialized();
+            lz77_get_histogram_at(lz77, lstart - 1, ll_counts2.as_mut_ptr(), d_counts2.as_mut_ptr());
+
+            for i in 0..NUM_LL {
+                *ll_counts.offset(i as isize) -= ll_counts2[i];
+            }
+            for i in 0..NUM_D {
+                *d_counts.offset(i as isize) -= d_counts2[i];
+            }
+        }
+    }
+}
+
+#[cfg(feature = "longest-match-cache")]
+pub unsafe fn clean_block_state(s: *mut BlockState) {
+    if !(*s).lmc.is_null() {
+        cache::clean_cache((*s).lmc);
+        free((*s).lmc as *mut c_void);
+    }
+ }
+
+#[cfg(not(feature = "longest-match-cache"))]
+pub fn clean_block_state(s: *mut BlockState) {
 }
 
 /**
@@ -487,7 +666,7 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
             if match_available {
                 match_available = false;
                 if lengthscore > prevlengthscore + 1 {
-                    store_litlen_dist(*in_.offset(i as isize - 1) as u16, 0, store);
+                    store_litlen_dist(*in_.offset(i as isize - 1) as u16, 0, i - 1, store);
                     if lengthscore as usize >= MIN_MATCH && (leng as usize) < MAX_MATCH {
                         match_available = true;
                         prev_length = leng as u32;
@@ -501,7 +680,7 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
                     dist = prev_match as u16;
                     // Add to output.
                     verify_len_dist(in_, inend, i - 1, dist, leng);
-                    store_litlen_dist(leng, dist, store);
+                    store_litlen_dist(leng, dist, i - 1, store);
                     for _ in 2..leng {
                         assert!(i < inend);
                         i += 1;
@@ -523,10 +702,10 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
         // Add to output.
         if lengthscore as usize >= MIN_MATCH {
             verify_len_dist(in_, inend, i, dist, leng);
-            store_litlen_dist(leng, dist, store);
+            store_litlen_dist(leng, dist, i, store);
         } else {
             leng = 1;
-            store_litlen_dist(*in_.offset(i as isize) as u16, 0, store);
+            store_litlen_dist(*in_.offset(i as isize) as u16, 0, i, store);
         }
         for _ in 1..leng {
             assert!(i < inend);
@@ -537,36 +716,4 @@ pub unsafe fn lz77_greedy(s: *const BlockState, in_: *const u8, instart: usize, 
     }
 
     hash::Hash::clean(h);
-}
-
-/**
- * Counts the number of literal, length and distance symbols in the given lz77
- * arrays.
- * litlens: lz77 lit/lengths
- * dists: ll77 distances
- * start: where to begin counting in litlens and dists
- * end: where to stop counting in litlens and dists (not inclusive)
- * ll_count: count of each lit/len symbol, must have size 288 (see deflate
- *     standard)
- * d_count: count of each dist symbol, must have size 32 (see deflate standard)
- */
-pub unsafe fn lz77_counts(litlens: *const u16, dists: *const u16, start: usize, end: usize, ll_count: *mut usize, d_count: *mut usize) {
-    for i in 0..288 {
-        *ll_count.offset(i) = 0;
-    }
-    for i in 0..32 {
-        *d_count.offset(i) = 0;
-    }
-
-    for i in start..end {
-        if *dists.offset(i as isize) == 0 {
-            *ll_count.offset(*litlens.offset(i as isize) as isize) += 1;
-        } else {
-            *ll_count.offset(util::get_length_symbol(*litlens.offset(i as isize) as i32) as isize) += 1;
-            *d_count.offset(util::get_dist_symbol(*dists.offset(i as isize) as i32) as isize) += 1;
-        }
-    }
-
-    // End symbol.
-    *ll_count.offset(256) = 1;
 }

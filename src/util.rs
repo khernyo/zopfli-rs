@@ -7,6 +7,10 @@
 pub const MAX_MATCH: usize = 258;
 pub const MIN_MATCH: usize = 3;
 
+/// Number of distinct literal/length and distance symbols in DEFLATE
+pub const NUM_LL: usize = 288;
+pub const NUM_D: usize = 32;
+
 /// The window size for deflate. Must be a power of two. This should be 32768, the
 /// maximum possible by the deflate spec. Anything less hurts compression more than
 /// speed.
@@ -150,6 +154,24 @@ pub fn get_length_symbol(l: i32) -> i32 {
         284, 284, 284, 284, 284, 284, 284, 284,
         284, 284, 284, 284, 284, 284, 284, 285];
     TABLE[l as usize]
+}
+
+/// Gets the amount of extra bits for the given length symbol.
+pub fn get_length_symbol_extra_bits(s: i32) -> i32 {
+    static TABLE: [i32; 29] = [
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2,
+        3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0
+    ];
+    TABLE[s as usize - 257]
+}
+
+/// Gets the amount of extra bits for the given distance symbol.
+pub fn get_dist_symbol_extra_bits(s: i32) -> i32 {
+    static TABLE: [i32; 30] = [
+        0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8,
+        9, 9, 10, 10, 11, 11, 12, 12, 13, 13
+    ];
+    TABLE[s as usize]
 }
 
 macro_rules! append_data {

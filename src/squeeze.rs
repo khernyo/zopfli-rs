@@ -7,29 +7,30 @@ use libc::funcs::c95::stdlib::{free, malloc};
 
 use deflate::calculate_block_size;
 use hash::{update_hash, warmup_hash, Hash};
-use lz77::{clean_lz77_store, copy_lz77_store, find_longest_match, lz77_greedy, store_litlen_dist, verify_len_dist, BlockState, LZ77Store};
+use lz77::{copy_lz77_store, find_longest_match, lz77_greedy, store_litlen_dist, verify_len_dist, BlockState, LZ77Store};
 use tree::calculate_entropy;
-use util::{get_dist_extra_bits, get_dist_symbol, get_length_extra_bits, get_length_symbol, LARGE_FLOAT, MAX_MATCH, MIN_MATCH, WINDOW_SIZE};
+use util::{get_dist_extra_bits, get_dist_symbol, get_length_extra_bits, get_length_symbol,
+    LARGE_FLOAT, MAX_MATCH, MIN_MATCH, NUM_D, NUM_LL, WINDOW_SIZE};
 
 struct SymbolStats {
     /// The literal and length symbols.
-    litlens: [usize; 288],
+    litlens: [usize; NUM_LL],
     /// The 32 unique dist symbols, not the 32768 possible dists.
-    dists: [usize; 32],
+    dists: [usize; NUM_D],
 
     /// Length of each lit/len symbol in bits.
-    ll_symbols: [f64; 288],
+    ll_symbols: [f64; NUM_LL],
     /// Length of each dist symbol in bits.
-    d_symbols: [f64; 32],
+    d_symbols: [f64; NUM_D],
 }
 
 impl SymbolStats {
     fn new() -> SymbolStats {
         SymbolStats {
-            litlens: [0usize; 288],
-            dists: [0usize; 32],
-            ll_symbols: [0f64; 288],
-            d_symbols: [0f64; 32],
+            litlens: [0usize; NUM_LL],
+            dists: [0usize; NUM_D],
+            ll_symbols: [0f64; NUM_LL],
+            d_symbols: [0f64; NUM_D],
         }
     }
 }
@@ -43,10 +44,10 @@ unsafe fn copy_stats(source: *const SymbolStats, dest: *mut SymbolStats) {
 
 /// Adds the bit lengths.
 unsafe fn add_weighed_stat_freqs(stats1: *const SymbolStats, w1: f64, stats2: *const SymbolStats, w2: f64, result: *mut SymbolStats) {
-    for i in 0..288 {
+    for i in 0..NUM_LL {
         (*result).litlens[i] = ((*stats1).litlens[i] as f64 * w1 + (*stats2).litlens[i] as f64 * w2) as usize;
     }
-    for i in 0..32 {
+    for i in 0..NUM_D {
         (*result).dists[i] = ((*stats1).dists[i] as f64 * w1 + (*stats2).dists[i] as f64 * w2) as usize;
     }
     (*result).litlens[256] = 1; // End symbol.
@@ -82,16 +83,16 @@ unsafe fn randomize_freqs(state: *mut RanState, freqs: *mut usize, n: i32) {
 }
 
 unsafe fn randomize_stat_freqs(state: *mut RanState, stats: *mut SymbolStats) {
-    randomize_freqs(state, (*stats).litlens.as_mut_ptr(), 288);
-    randomize_freqs(state, (*stats).dists.as_mut_ptr(), 32);
+    randomize_freqs(state, (*stats).litlens.as_mut_ptr(), NUM_LL as i32);
+    randomize_freqs(state, (*stats).dists.as_mut_ptr(), NUM_D as i32);
     (*stats).litlens[256] = 1; // End symbol.
 }
 
 unsafe fn clear_stat_freqs(stats: *mut SymbolStats) {
-    for i in 0..288 {
+    for i in 0..NUM_LL {
         (*stats).litlens[i] = 0;
     }
-    for i in 0..32 {
+    for i in 0..NUM_D {
         (*stats).dists[i] = 0;
     }
 }
@@ -355,11 +356,11 @@ unsafe fn follow_path(s: *const BlockState, in_: *const u8, instart: usize, inen
             find_longest_match(s, h, in_, pos, inend, length as usize, null_mut(), &mut dist, &mut dummy_length);
             assert!(!(dummy_length != length && length > 2 && dummy_length > 2));
             verify_len_dist(in_, inend, pos, dist, length);
-            store_litlen_dist(length, dist, store);
+            store_litlen_dist(length, dist, pos, store);
             _total_length_test += length as usize;
         } else {
             length = 1;
-            store_litlen_dist(*in_.offset(pos as isize) as u16, 0, store);
+            store_litlen_dist(*in_.offset(pos as isize) as u16, 0, pos, store);
             _total_length_test += 1;
         }
 
@@ -376,8 +377,8 @@ unsafe fn follow_path(s: *const BlockState, in_: *const u8, instart: usize, inen
 
 /// Calculates the entropy of the statistics
 unsafe fn calculate_statistics(stats: *mut SymbolStats) {
-    calculate_entropy((*stats).litlens.as_ptr(), 288, (*stats).ll_symbols.as_mut_ptr());
-    calculate_entropy((*stats).dists.as_ptr(), 32, (*stats).d_symbols.as_mut_ptr());
+    calculate_entropy((*stats).litlens.as_ptr(), NUM_LL, (*stats).ll_symbols.as_mut_ptr());
+    calculate_entropy((*stats).dists.as_ptr(), NUM_D, (*stats).d_symbols.as_mut_ptr());
 }
 
 /// Appends the symbol statistics from the store.
@@ -398,14 +399,14 @@ unsafe fn get_statistics(store: *const LZ77Store, stats: *mut SymbolStats) {
 /**
  * Does a single run for ZopfliLZ77Optimal. For good compression, repeated runs
  * with updated statistics should be performed.
- * 
+ *
  * s: the block state
  * in: the input data array
  * instart: where to start
  * inend: where to stop (not inclusive)
  * path: pointer to dynamically allocated memory to store the path
  * pathsize: pointer to the size of the dynamic path array
- * length_array: array if size (inend - instart) used to store lengths
+ * length_array: array of size (inend - instart) used to store lengths
  * costmodel: function to use as the cost model for this squeeze run
  * costcontext: abstract context for the costmodel function
  * store: place to output the LZ77 data
@@ -429,13 +430,13 @@ unsafe fn lz77_optimal_run(s: *const BlockState, in_: *const u8, instart: usize,
 /// Calculates lit/len and dist pairs for given data.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-pub unsafe fn lz77_optimal(s: *const BlockState, in_: *const u8, instart: usize, inend: usize, store: *mut LZ77Store) {
+pub unsafe fn lz77_optimal(s: *const BlockState, in_: *const u8, instart: usize, inend: usize, numiterations: i32, store: *mut LZ77Store) {
     // Dist to get to here with smallest cost.
     let blocksize: usize = inend - instart;
     let length_array: *mut u16 = malloc(size_of::<u16>() as size_t * (blocksize as size_t + 1)) as *mut u16;
     let mut path: *mut u16 = null_mut();
     let mut pathsize: usize = 0;
-    let mut currentstore = LZ77Store::new();
+    let mut currentstore = LZ77Store::new(in_);
     let mut stats = SymbolStats::new();
     let mut beststats: SymbolStats = uninitialized();
     let mut laststats: SymbolStats = uninitialized();
@@ -459,11 +460,11 @@ pub unsafe fn lz77_optimal(s: *const BlockState, in_: *const u8, instart: usize,
 
     // Repeat statistics with each time the cost model from the previous stat
     // run.
-    for i in 0..(*(*s).options).numiterations {
+    for i in 0..numiterations {
         LZ77Store::clean(&mut currentstore);
-        LZ77Store::init(&mut currentstore);
+        LZ77Store::init(in_, &mut currentstore);
         lz77_optimal_run(s, in_, instart, inend, &mut path, &mut pathsize, length_array, get_cost_stat, &stats as *const _ as *const c_void, &mut currentstore);
-        cost = calculate_block_size(currentstore.litlens, currentstore.dists, 0, currentstore.size, 2);
+        cost = calculate_block_size(&currentstore, 0, currentstore.size, 2);
         if (*(*s).options).verbose_more || ((*(*s).options).verbose && cost < bestcost) {
             println_err!("Iteration {}: {} bit", i, cost as i32);
         }
@@ -494,7 +495,7 @@ pub unsafe fn lz77_optimal(s: *const BlockState, in_: *const u8, instart: usize,
 
     free(length_array as *mut c_void);
     free(path as *mut c_void);
-    clean_lz77_store(&mut currentstore);
+    LZ77Store::clean(&mut currentstore);
 }
 
 /// Does the same as ZopfliLZ77Optimal, but optimized for the fixed tree of the

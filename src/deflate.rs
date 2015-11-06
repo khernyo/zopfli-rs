@@ -2,7 +2,7 @@
 //! "squeeze" LZ77 compression backend.
 
 use std::io::Write;
-use std::mem::{size_of, uninitialized};
+use std::mem::{size_of, size_of_val, uninitialized};
 use std::ptr::null_mut;
 
 use libc::{c_void, size_t};
@@ -11,17 +11,15 @@ use libc::funcs::c95::stdlib::{free, malloc};
 use super::Options;
 use util;
 
-use blocksplitter::{block_split, block_split_lz77, block_split_simple};
+use blocksplitter::{block_split, block_split_lz77};
 
-#[cfg(feature = "longest-match-cache")]
-use cache;
-#[cfg(feature = "longest-match-cache")]
-use cache::LongestMatchCache;
-
-use lz77::{clean_lz77_store, lz77_counts, BlockState, LZ77Store};
+use lz77::{append_lz77_store, clean_block_state, lz77_get_byte_range,
+    lz77_get_histogram, BlockState, LZ77Store};
 use squeeze::{lz77_optimal, lz77_optimal_fixed};
 use tree::{calculate_bit_lengths, lengths_to_symbols};
-use util::{get_length_symbol, get_dist_symbol, get_length_extra_bits_value, get_length_extra_bits, get_dist_extra_bits_value, get_dist_extra_bits};
+use util::{get_length_symbol, get_dist_symbol, get_length_extra_bits_value, get_length_extra_bits,
+    get_length_symbol_extra_bits, get_dist_symbol_extra_bits, get_dist_extra_bits_value,
+    get_dist_extra_bits, NUM_D, NUM_LL};
 
 /// bp = bitpointer, always in range [0, 7].
 /// The outsize is number of necessary bytes to encode the bits.
@@ -281,13 +279,13 @@ unsafe fn calculate_tree_size(ll_lengths: *const u32, d_lengths: *const u32) -> 
 /// Adds all lit/len and dist codes from the lists as huffman symbols. Does not add
 /// end code 256. expected_data_size is the uncompressed block size, used for
 /// assert, but you can set it to 0 to not do the assertion.
-unsafe fn add_lz77_data(litlens: *const u16, dists: *const u16, lstart: usize, lend: usize, expected_data_size: usize,
+unsafe fn add_lz77_data(lz77: *const LZ77Store, lstart: usize, lend: usize, expected_data_size: usize,
                  ll_symbols: *const u32, ll_lengths: *const u32, d_symbols: *const u32, d_lengths: *const u32,
                  bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
     let mut testlength: usize = 0;
     for i in lstart..lend {
-        let dist: u32 = *dists.offset(i as isize) as u32;
-        let litlen: u32 = *litlens.offset(i as isize) as u32;
+        let dist: u32 = *(*lz77).dists.offset(i as isize) as u32;
+        let litlen: u32 = *(*lz77).litlens.offset(i as isize) as u32;
         if dist == 0 {
             assert!(litlen < 256);
             assert!(*ll_lengths.offset(litlen as isize) > 0);
@@ -328,17 +326,25 @@ unsafe fn get_fixed_tree(ll_lengths: *mut u32, d_lengths: *mut u32) {
 }
 
 /// Calculates size of the part after the header and tree of an LZ77 block, in bits.
-unsafe fn calculate_block_symbol_size(ll_lengths: *const u32, d_lengths: *const u32, litlens: *const u16, dists: *const u16, lstart: usize, lend: usize) -> usize {
+unsafe fn calculate_block_symbol_size(ll_lengths: *const u32, d_lengths: *const u32, lz77: *const LZ77Store, lstart: usize, lend: usize) -> usize {
     let mut result: usize = 0;
-    for i in lstart..lend {
-        if *dists.offset(i as isize) ==0 {
-            result += *ll_lengths.offset(*litlens.offset(i as isize) as isize) as usize;
-        } else {
-            result += *ll_lengths.offset(get_length_symbol(*litlens.offset(i as isize) as i32) as isize) as usize;
-            result += *d_lengths.offset(get_dist_symbol(*dists.offset(i as isize) as i32) as isize) as usize;
-            result += get_length_extra_bits(*litlens.offset(i as isize) as i32) as usize;
-            result += get_dist_extra_bits(*dists.offset(i as isize) as i32) as usize;
+    if lstart + NUM_LL * 3 > lend {
+        for i in lstart..lend {
+            assert!(i < (*lz77).size);
+            assert!(*(*lz77).litlens.offset(i as isize) < 259);
+            if *(*lz77).dists.offset(i as isize) == 0 {
+                result += *ll_lengths.offset(*(*lz77).litlens.offset(i as isize) as isize) as usize;
+            } else {
+                let ll_symbol: i32 = get_length_symbol(*(*lz77).litlens.offset(i as isize) as i32);
+                let d_symbol: i32 = get_dist_symbol(*(*lz77).dists.offset(i as isize) as i32);
+                result += *ll_lengths.offset(ll_symbol as isize) as usize;
+                result += *d_lengths.offset(d_symbol as isize) as usize;
+                result += get_length_symbol_extra_bits(ll_symbol) as usize;
+                result += get_dist_symbol_extra_bits(d_symbol) as usize;
+            }
         }
+    } else {
+
     }
     result += *ll_lengths.offset(256) as usize; // end symbol
     result
@@ -445,15 +451,16 @@ unsafe fn optimize_huffman_for_rle(mut length: i32, counts: *mut usize) {
 /// lengths that give the smallest size of tree encoding + encoding of all the
 /// symbols to have smallest output size. This are not necessarily the ideal Huffman
 /// bit lengths.
-unsafe fn get_dynamic_lengths(litlens: *const u16, dists: *const u16, lstart: usize, lend: usize, ll_lengths: *mut u32, d_lengths: *mut u32) {
-    let mut ll_counts: [usize; 288] = uninitialized();
-    let mut d_counts: [usize; 32] = uninitialized();
+unsafe fn get_dynamic_lengths(lz77: *const LZ77Store, lstart: usize, lend: usize, ll_lengths: *mut u32, d_lengths: *mut u32) {
+    let mut ll_counts: [usize; NUM_LL] = uninitialized();
+    let mut d_counts: [usize; NUM_D] = uninitialized();
 
-    lz77_counts(litlens, dists, lstart, lend, ll_counts.as_mut_ptr(), d_counts.as_mut_ptr());
-    optimize_huffman_for_rle(288, ll_counts.as_mut_ptr());
-    optimize_huffman_for_rle(32, d_counts.as_mut_ptr());
-    calculate_bit_lengths(ll_counts.as_ptr(), 288, 15, ll_lengths);
-    calculate_bit_lengths(d_counts.as_ptr(), 32, 15, d_lengths);
+    lz77_get_histogram(lz77, lstart, lend, ll_counts.as_mut_ptr(), d_counts.as_mut_ptr());
+    ll_counts[256] = 1;  // End symbol.
+    optimize_huffman_for_rle(NUM_LL as i32, ll_counts.as_mut_ptr());
+    optimize_huffman_for_rle(NUM_D as i32, d_counts.as_mut_ptr());
+    calculate_bit_lengths(ll_counts.as_ptr(), NUM_LL, 15, ll_lengths);
+    calculate_bit_lengths(d_counts.as_ptr(), NUM_D, 15, d_lengths);
     patch_distance_codes_for_buggy_decoders(d_lengths);
 }
 
@@ -462,26 +469,83 @@ unsafe fn get_dynamic_lengths(litlens: *const u16, dists: *const u16, lstart: us
 /// dists: ll77 distances
 /// lstart: start of block
 /// lend: end of block (not inclusive)
-pub unsafe fn calculate_block_size(litlens: *const u16, dists: *const u16, lstart: usize, lend: usize, btype: i32) -> f64 {
-    let mut ll_lengths: [u32; 288] = uninitialized();
-    let mut d_lengths: [u32; 32] = uninitialized();
+pub unsafe fn calculate_block_size(lz77: *const LZ77Store, lstart: usize, lend: usize, btype: i32) -> f64 {
+    let mut ll_lengths: [u32; NUM_LL] = uninitialized();
+    let mut d_lengths: [u32; NUM_D] = uninitialized();
 
     // bfinal and btype bits
     let mut result: f64 = 3.0;
 
-    // This is not for uncompressed blocks.
-    assert!(btype == 1 || btype == 2);
-
-    if btype == 1 {
+    if btype == 0 {
+        let length: usize = lz77_get_byte_range(lz77, lstart, lend);
+        let rem: usize = length % 65535;
+        let blocks: usize = length / 65535 + (if rem > 0 { 1 } else { 0 });
+        // An uncompressed block must actually be split into multiple blocks if it's
+        // larger than 65535 bytes long. Eeach block header is 5 bytes: 3 bits,
+        // padding, LEN and NLEN (potential less padding for first one ignored).
+        return (blocks * 5 * 8 + length * 8) as f64;
+    } else if btype == 1 {
         get_fixed_tree(ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
     } else {
-        get_dynamic_lengths(litlens, dists, lstart, lend, ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
+        get_dynamic_lengths(lz77, lstart, lend, ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
         result += calculate_tree_size(ll_lengths.as_ptr(), d_lengths.as_ptr()) as f64;
     }
 
-    result += calculate_block_symbol_size(ll_lengths.as_ptr(), d_lengths.as_ptr(), litlens, dists, lstart, lend) as f64;
+    result += calculate_block_symbol_size(ll_lengths.as_ptr(), d_lengths.as_ptr(), lz77, lstart, lend) as f64;
 
     result
+}
+
+/// Calculates block size in bits, automatically using the best btype.
+pub unsafe fn calculate_block_size_auto_type(lz77: *const LZ77Store, lstart: usize, lend: usize) -> f64 {
+    let uncompressedcost: f64 = calculate_block_size(lz77, lstart, lend, 0);
+    // Don't do the expensive fixed cost calculation for larger blocks that are
+    // unlikely to use it.
+    let fixedcost: f64 = if (*lz77).size > 1000 { uncompressedcost } else { calculate_block_size(lz77, lstart, lend, 1) };
+    let dyncost: f64 = calculate_block_size(lz77, lstart, lend, 2);
+    if uncompressedcost < fixedcost && uncompressedcost < dyncost {
+        uncompressedcost
+    } else if fixedcost < dyncost {
+        fixedcost
+    } else {
+        dyncost
+    }
+}
+
+/// Since an uncompressed block can be max 65535 in size, it actually adds
+/// multiple blocks if needed.
+unsafe fn add_non_compressed_block(_options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    let mut pos: usize = instart;
+    loop {
+        let mut blocksize: u16 = 65535;
+
+        if pos + blocksize as usize > inend {
+            blocksize = (inend - pos) as u16;
+        }
+        let currentfinal = pos + blocksize as usize >= inend;
+
+        let nlen: u16 = !blocksize;
+
+        add_bit(if is_final && currentfinal { 1 } else { 0 }, bp, out, outsize);
+        // BTYPE 00
+        add_bit(0, bp, out, outsize);
+        add_bit(0, bp, out, outsize);
+
+        // Any bits of input up to the next byte boundary are ignored.
+        *bp = 0;
+
+        append_data!((blocksize % 256) as u8, *out, *outsize);
+        append_data!(((blocksize / 256) % 256) as u8, *out, *outsize);
+        append_data!((nlen % 256) as u8, *out, *outsize);
+        append_data!(((nlen / 256) % 256) as u8, *out, *outsize);
+
+        for i in 0..blocksize {
+            append_data!(*in_.offset((pos + i as usize) as isize), *out, *outsize);
+        }
+
+        if currentfinal { break }
+        pos += blocksize as usize;
+    }
 }
 
 /**
@@ -501,12 +565,20 @@ pub unsafe fn calculate_block_size(litlens: *const u16, dists: *const u16, lstar
  * out: dynamic output array to append to
  * outsize: dynamic output array size
  */
-unsafe fn add_lz77_block(options: *const Options, btype: i32, is_final: bool, litlens: *const u16, dists: *const u16, lstart: usize, lend: usize,
-                  expected_data_size: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
-    let mut ll_lengths: [u32; 288] = uninitialized();
-    let mut d_lengths: [u32; 32] = uninitialized();
-    let mut ll_symbols: [u32; 288] = uninitialized();
-    let mut d_symbols: [u32; 32] = uninitialized();
+unsafe fn add_lz77_block(options: *const Options, btype: i32, is_final: bool, lz77: *const LZ77Store, lstart: usize, lend: usize,
+                         expected_data_size: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    let mut ll_lengths: [u32; NUM_LL] = uninitialized();
+    let mut d_lengths: [u32; NUM_D] = uninitialized();
+    let mut ll_symbols: [u32; NUM_LL] = uninitialized();
+    let mut d_symbols: [u32; NUM_D] = uninitialized();
+
+    if btype == 0 {
+        let length: usize = lz77_get_byte_range(lz77, lstart, lend);
+        let pos: usize = if lstart == lend { 0 } else { *(*lz77).pos.offset(lstart as isize) };
+        let end: usize = pos + length;
+        add_non_compressed_block(options, is_final, (*lz77).data, pos, end, bp, out, outsize);
+        return
+    }
 
     add_bit(if is_final { 1 } else { 0 }, bp, out, outsize);
     add_bit(btype & 1, bp, out, outsize);
@@ -519,7 +591,7 @@ unsafe fn add_lz77_block(options: *const Options, btype: i32, is_final: bool, li
         // Dynamic block.
         assert_eq!(btype, 2);
 
-        get_dynamic_lengths(litlens, dists, lstart, lend, ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
+        get_dynamic_lengths(lz77, lstart, lend, ll_lengths.as_mut_ptr(), d_lengths.as_mut_ptr());
 
         let detect_tree_size: u32 = *outsize as u32;
         add_dynamic_tree(ll_lengths.as_ptr(), d_lengths.as_ptr(), bp, out, outsize);
@@ -528,18 +600,18 @@ unsafe fn add_lz77_block(options: *const Options, btype: i32, is_final: bool, li
         }
     }
 
-    lengths_to_symbols(ll_lengths.as_ptr(), 288, 15, ll_symbols.as_mut_ptr());
-    lengths_to_symbols(d_lengths.as_ptr(), 32, 15, d_symbols.as_mut_ptr());
+    lengths_to_symbols(ll_lengths.as_ptr(), NUM_LL, 15, ll_symbols.as_mut_ptr());
+    lengths_to_symbols(d_lengths.as_ptr(), NUM_D, 15, d_symbols.as_mut_ptr());
 
     let detect_block_size: usize = *outsize;
-    add_lz77_data(litlens, dists, lstart, lend, expected_data_size, ll_symbols.as_ptr(), ll_lengths.as_ptr(), d_symbols.as_ptr(), d_lengths.as_ptr(), bp, out, outsize);
+    add_lz77_data(lz77, lstart, lend, expected_data_size, ll_symbols.as_ptr(), ll_lengths.as_ptr(), d_symbols.as_ptr(), d_lengths.as_ptr(), bp, out, outsize);
 
     // End symbol.
     add_huffman_bits(ll_symbols[256], ll_lengths[256], bp, out, outsize);
 
     let mut uncompressed_size: usize = 0;
     for i in lstart..lend {
-        uncompressed_size += if *dists.offset(i as isize) == 0 { 1 } else { *litlens.offset(i as isize) } as usize;
+        uncompressed_size += if *(*lz77).dists.offset(i as isize) == 0 { 1 } else { *(*lz77).litlens.offset(i as isize) } as usize;
     }
     let compressed_size: usize = *outsize - detect_block_size;
     if (*options).verbose {
@@ -547,197 +619,50 @@ unsafe fn add_lz77_block(options: *const Options, btype: i32, is_final: bool, li
     }
 }
 
-unsafe fn deflate_dynamic_block(options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
-    let blocksize: usize = inend - instart;
+unsafe fn add_lz77_block_auto_type(options: *const Options, is_final: bool, lz77: *const LZ77Store,
+                            lstart: usize, lend: usize, expected_data_size: usize,
+                            bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
+    let uncompressedcost: f64 = calculate_block_size(lz77, lstart, lend, 0);
+    let mut fixedcost: f64 = calculate_block_size(lz77, lstart, lend, 1);
+    let dyncost: f64 = calculate_block_size(lz77, lstart, lend, 2);
 
-    #[cfg(feature = "longest-match-cache")]
-    unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
-        BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
+    // Whether to perform the expensive calculation of creating an optimal block
+    // with fixed huffman tree to check if smaller. Only do this for small blocks or
+    // blocks which already are pretty good with fixed huffman tree.
+    let expensivefixed = ((*lz77).size < 1000) || fixedcost <= dyncost * 1.1;
+
+    if lstart == lend {
+        // Smallest empty block is represented by fixed block
+        add_bits(if is_final { 1 } else { 0 }, 1, bp, out, outsize);
+        add_bits(1, 2, bp, out, outsize);  // btype 01
+        add_bits(0, 7, bp, out, outsize);  // end symbol has code 0000000
+        return;
     }
-    #[cfg(not(feature = "longest-match-cache"))]
-    fn create_block_state(options: *const Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
-        BlockState::new(options, instart, inend, null_mut())
+    let mut fixedstore = LZ77Store::new((*lz77).data);
+    if expensivefixed {
+        // Recalculate the LZ77 with ZopfliLZ77OptimalFixed
+        let instart: usize = *(*lz77).pos.offset(lstart as isize);
+        let inend: usize = instart + lz77_get_byte_range(lz77, lstart, lend);
+
+        let mut s = BlockState::new(options, instart, inend, true);
+        lz77_optimal_fixed(&mut s, (*lz77).data, instart, inend, &mut fixedstore);
+        fixedcost = calculate_block_size(&fixedstore, 0, fixedstore.size, 1);
+        clean_block_state(&mut s);
     }
-    let mut s = create_block_state(options, instart, inend, blocksize);
 
-    let mut store = LZ77Store::new();
-    let mut btype: i32 = 2;
-
-    lz77_optimal(&s, in_, instart, inend, &mut store);
-
-    // For small block, encoding with fixed tree can be smaller. For large block,
-    // don't bother doing this expensive test, dynamic tree will be better.
-    if store.size < 1000 {
-        let mut fixedstore = LZ77Store::new();
-        lz77_optimal_fixed(&mut s, in_, instart, inend, &mut fixedstore);
-        let dyncost: f64 = calculate_block_size(store.litlens, store.dists, 0, store.size, 2);
-        let fixedcost: f64 = calculate_block_size(fixedstore.litlens, fixedstore.dists, 0, fixedstore.size, 1);
-        if fixedcost < dyncost {
-            btype = 1;
-            clean_lz77_store(&mut store);
-            store = fixedstore;
+    if uncompressedcost < fixedcost && uncompressedcost < dyncost {
+        add_lz77_block(options, 0, is_final, lz77, lstart, lend, expected_data_size, bp, out, outsize);
+    } else if fixedcost < dyncost {
+        if expensivefixed {
+            add_lz77_block(options, 1, is_final, &fixedstore, 0, fixedstore.size, expected_data_size, bp, out, outsize);
         } else {
-            clean_lz77_store(&mut fixedstore);
+            add_lz77_block(options, 1, is_final, lz77, lstart, lend, expected_data_size, bp, out, outsize);
         }
-    }
-
-    add_lz77_block(s.options, btype, is_final, store.litlens, store.dists, 0, store.size, blocksize, bp, out, outsize);
-
-    #[cfg(feature = "longest-match-cache")]
-    unsafe fn clean_cache(s: *mut BlockState) {
-        cache::clean_cache((*s).lmc);
-        free((*s).lmc as *mut c_void);
-    }
-    #[cfg(not(feature = "longest-match-cache"))]
-    fn clean_cache(_s: *mut BlockState) { }
-    clean_cache(&mut s);
-
-    clean_lz77_store(&mut store);
-}
-
-unsafe fn deflate_fixed_block(options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
-    let blocksize: usize = inend - instart;
-
-    #[cfg(feature = "longest-match-cache")]
-    unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
-        BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
-    }
-    #[cfg(not(feature = "longest-match-cache"))]
-    fn create_block_state(options: *const Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
-        BlockState::new(options, instart, inend, null_mut())
-    }
-    let mut s = create_block_state(options, instart, inend, blocksize);
-
-    let mut store = LZ77Store::new();
-
-    lz77_optimal_fixed(&mut s, in_, instart, inend, &mut store);
-
-    add_lz77_block(s.options, 1, is_final, store.litlens, store.dists, 0, store.size, blocksize, bp, out, outsize);
-
-    #[cfg(feature = "longest-match-cache")]
-    unsafe fn clean_cache(s: *mut BlockState) {
-        cache::clean_cache((*s).lmc);
-        free((*s).lmc as *mut c_void);
-    }
-    #[cfg(not(feature = "longest-match-cache"))]
-    fn clean_cache(_s: *mut BlockState) { }
-    clean_cache(&mut s);
-
-    clean_lz77_store(&mut store);
-}
-
-unsafe fn deflate_non_compressed_block(_options: *const Options, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
-    let blocksize: usize = inend - instart;
-    let nlen: u16 = !blocksize as u16;
-
-    assert!(blocksize < 65536); // Non compressed blocks are max this size.
-    add_bit(if is_final { 1 } else { 0 }, bp, out, outsize);
-    // BTYPE 00
-    add_bit(0, bp, out, outsize);
-    add_bit(0, bp, out, outsize);
-
-    // Any bits of input up to the next byte boundary are ignored.
-    *bp = 0;
-
-    append_data!((blocksize % 256) as u8, *out, *outsize);
-    append_data!(((blocksize / 256) % 256) as u8, *out, *outsize);
-    append_data!((nlen % 256) as u8, *out, *outsize);
-    append_data!(((nlen / 256) % 256) as u8, *out, *outsize);
-
-    for i in instart..inend {
-        append_data!(*in_.offset(i as isize), *out, *outsize);
-    }
-}
-
-unsafe fn deflate_block(options: *const Options, btype: i32, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
-    if btype == 0 {
-        deflate_non_compressed_block(options, is_final, in_, instart, inend, bp, out, outsize);
-    } else if btype == 1 {
-        deflate_fixed_block(options, is_final, in_, instart, inend, bp, out, outsize);
     } else {
-        deflate_dynamic_block(options, is_final, in_, instart, inend, bp, out, outsize);
-    }
-}
-
-/// Does squeeze strategy where first block splitting is done, then each block is
-/// squeezed.
-/// Parameters: see description of the ZopfliDeflate function.
-unsafe fn deflate_splitting_first(options: *const Options, btype: i32, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
-    let mut splitpoints: *mut usize = null_mut();
-    let mut npoints: usize = 0;
-    if btype == 0 {
-        block_split_simple(in_, instart, inend, 65535, &mut splitpoints, &mut npoints);
-    } else if btype == 1 {
-        // If all blocks are fixed tree, splitting into separate blocks only
-        // increases the total size. Leave npoints at 0, this represents 1 block.
-    } else {
-        block_split(options, in_, instart, inend, (*options).blocksplittingmax as usize, &mut splitpoints, &mut npoints);
+        add_lz77_block(options, 2, is_final, lz77, lstart, lend, expected_data_size, bp, out, outsize);
     }
 
-    for i in 0..npoints+1 {
-        let start: usize = if i == 0 { instart } else { *splitpoints.offset(i as isize - 1) };
-        let end: usize = if i == npoints { inend } else { *splitpoints.offset(i as isize) };
-        deflate_block(options, btype, i == npoints && is_final, in_, start, end, bp, out, outsize);
-    }
-
-    free(splitpoints as *mut c_void);
-}
-
-/// Does squeeze strategy where first the best possible lz77 is done, and then based
-/// on that data, block splitting is done.
-/// Parameters: see description of the ZopfliDeflate function.
-unsafe fn deflate_splitting_last(options: *const Options, btype: i32, is_final: bool, in_: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
-    #[cfg(feature = "longest-match-cache")]
-    unsafe fn create_block_state(options: *const Options, instart: usize, inend: usize, blocksize: usize) -> BlockState {
-        BlockState::new(options, instart, inend, LongestMatchCache::new(blocksize))
-    }
-    #[cfg(not(feature = "longest-match-cache"))]
-    fn create_block_state(options: *const Options, instart: usize, inend: usize, _blocksize: usize) -> BlockState {
-        BlockState::new(options, instart, inend, null_mut())
-    }
-    let mut s = create_block_state(options, instart, inend, inend - instart);
-
-    let mut store = LZ77Store::new();
-
-    if btype == 0 {
-        // This function only supports LZ77 compression. DeflateSplittingFirst
-        // supports the special case of noncompressed data. Punt it to that one.
-        deflate_splitting_first(options, btype, is_final, in_, instart, inend, bp, out, outsize);
-    }
-    assert!(btype == 1 || btype == 2);
-
-    if btype == 2 {
-        lz77_optimal(&s, in_, instart, inend, &mut store);
-    } else {
-        assert_eq!(btype, 1);
-        lz77_optimal_fixed(&mut s, in_, instart, inend, &mut store);
-    }
-
-    let mut splitpoints: *mut usize = null_mut();
-    let mut npoints: usize = 0;
-    if btype == 1 {
-        // If all blocks are fixed tree, splitting into separate blocks only
-        // increases the total size. Leave npoints at 0, this represents 1 block.
-    } else {
-        block_split_lz77(options, store.litlens, store.dists, store.size, (*options).blocksplittingmax as usize, &mut splitpoints, &mut npoints);
-    }
-
-    for i in 0..npoints+1 {
-        let start: usize = if i == 0 { 0 } else { *splitpoints.offset(i as isize - 1) };
-        let end: usize = if i == npoints { store.size } else { *splitpoints.offset(i as isize) };
-        add_lz77_block(options, btype, i == npoints && is_final, store.litlens, store.dists, start, end, 0, bp, out, outsize);
-    }
-
-    #[cfg(feature = "longest-match-cache")]
-    unsafe fn clean_cache(s: *mut BlockState) {
-        cache::clean_cache((*s).lmc);
-        free((*s).lmc as *mut c_void);
-    }
-    #[cfg(not(feature = "longest-match-cache"))]
-    fn clean_cache(_s: *mut BlockState) { }
-    clean_cache(&mut s);
-
-    clean_lz77_store(&mut store);
+    LZ77Store::clean(&mut fixedstore);
 }
 
 /**
@@ -754,15 +679,86 @@ unsafe fn deflate_splitting_last(options: *const Options, btype: i32, is_final: 
  * the final bit will be set on the last block.
 */
 unsafe fn deflate_part(options: *const Options, btype: i32, is_final: bool, input: *const u8, instart: usize, inend: usize, bp: *mut u8, out: *mut *mut u8, outsize: *mut usize) {
-    if (*options).blocksplitting {
-        if (*options).blocksplittinglast {
-            deflate_splitting_last(options, btype, is_final, input, instart, inend, bp, out, outsize);
-        } else {
-            deflate_splitting_first(options, btype, is_final, input, instart, inend, bp, out, outsize);
-        }
-    } else {
-        deflate_block(options, btype, is_final, input, instart, inend, bp, out, outsize);
+    // byte coordinates rather than lz77 index
+    let mut splitpoints_uncompressed: *mut usize = null_mut();
+    let mut npoints: usize = 0;
+    let mut splitpoints: *mut usize = null_mut();
+    let mut totalcost: f64 = 0f64;
+
+    // If btype=2 is specified, it tries all block types. If a lesser btype is
+    // given, then however it forces that one. Neither of the lesser types needs
+    // block splitting as they have no dynamic huffman trees.
+    if btype == 0 {
+        add_non_compressed_block(options, is_final, input, instart, inend, bp, out, outsize);
+        return;
+    } else if btype == 1 {
+        let mut store = LZ77Store::new(input);
+        let mut s = BlockState::new(options, instart, inend, true);
+
+        lz77_optimal_fixed(&mut s, input, instart, inend, &mut store);
+        add_lz77_block(options, btype, is_final, &store, 0, store.size, 0, bp, out, outsize);
+
+        clean_block_state(&mut s);
+        LZ77Store::clean(&mut store);
+        return;
     }
+
+    if (*options).blocksplitting {
+        block_split(options, input, instart, inend, (*options).blocksplittingmax as usize, &mut splitpoints_uncompressed, &mut npoints);
+        splitpoints = malloc((size_of_val(&*splitpoints) * npoints) as size_t) as *mut usize;
+    }
+
+    let mut lz77 = LZ77Store::new(input);
+
+    for i in 0..npoints + 1 {
+        let start: usize = if i == 0 { instart } else { *splitpoints_uncompressed.offset(i as isize - 1) };
+        let end: usize = if i == npoints { inend } else { *splitpoints_uncompressed.offset(i as isize) };
+        let mut store = LZ77Store::new(input);
+        let mut s = BlockState::new(options, start, end, true);
+        lz77_optimal(&s, input, start, end, (*options).numiterations, &mut store);
+        totalcost += calculate_block_size_auto_type(&store, 0, store.size);
+
+        append_lz77_store(&store, &mut lz77);
+        if i < npoints {
+            *splitpoints.offset(i as isize) = lz77.size;
+        }
+
+        clean_block_state(&mut s);
+        LZ77Store::clean(&mut store);
+    }
+
+    // Second block splitting attempt
+    if (*options).blocksplitting && npoints > 1 {
+        let mut splitpoints2: *mut usize = null_mut();
+        let mut npoints2: usize = 0;
+        let mut totalcost2: f64 = 0f64;
+
+        block_split_lz77(options, &lz77, (*options).blocksplittingmax as usize, &mut splitpoints2, &mut npoints2);
+
+        for i in 0..npoints2 + 1 {
+            let start: usize = if i == 0 { 0 } else { *splitpoints2.offset(i as isize - 1) };
+            let end: usize = if i == npoints2 { lz77.size } else { *splitpoints2.offset(i as isize) };
+            totalcost2 += calculate_block_size_auto_type(&lz77, start, end);
+        }
+
+        if totalcost2 < totalcost {
+            free(splitpoints as *mut c_void);
+            splitpoints = splitpoints2;
+            npoints = npoints2;
+        } else {
+            free(splitpoints2 as *mut c_void);
+        }
+    }
+
+    for i in 0..npoints + 1 {
+        let start: usize = if i == 0 { 0 } else { *splitpoints.offset(i as isize - 1) };
+        let end: usize = if i == npoints { lz77.size } else { *splitpoints.offset(i as isize) };
+        add_lz77_block_auto_type(options, i == npoints && is_final, &lz77, start, end, 0, bp, out, outsize);
+    }
+
+    LZ77Store::clean(&mut lz77);
+    free(splitpoints as *mut c_void);
+    free(splitpoints_uncompressed as *mut c_void);
 }
 
 /**
@@ -801,7 +797,7 @@ pub unsafe fn deflate(options: *const Options, btype: i32, is_final: bool, input
             let size: usize = if masterfinal { insize - i } else { util::MASTER_BLOCK_SIZE };
             deflate_part(options, btype, final2, input, i, i + size, bp, out, outsize);
             i += size;
-            if i < insize { break }
+            if i >= insize { break }
         }
     }
 

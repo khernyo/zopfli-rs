@@ -13,8 +13,8 @@ use libc::funcs::c95::stdlib::{free, malloc};
 
 use super::Options;
 
-use deflate::calculate_block_size;
-use lz77::{BlockState, LZ77Store, lz77_greedy, clean_lz77_store};
+use deflate::calculate_block_size_auto_type;
+use lz77::{BlockState, LZ77Store, lz77_greedy, clean_block_state};
 use util;
 
 /// The "f" for the FindMinimum function below.
@@ -24,7 +24,8 @@ type FindMinimumFun = unsafe fn(i: usize, context: *const c_void) -> f64;
 
 /// Finds minimum of function f(i) where is is of type size_t, f(i) is of type
 /// double, i is in range start-end (excluding end).
-unsafe fn find_minimum(f: FindMinimumFun, context: *const c_void, start: usize, end: usize) -> usize {
+/// Outputs the minimum value in *smallest and returns the index of this value.
+unsafe fn find_minimum(f: FindMinimumFun, context: *const c_void, start: usize, end: usize, smallest: *mut f64) -> usize {
     if end - start < 1024 {
         let mut best: f64 = util::LARGE_FLOAT;
         let mut result = start;
@@ -35,6 +36,7 @@ unsafe fn find_minimum(f: FindMinimumFun, context: *const c_void, start: usize, 
                 result = i;
             }
         }
+        *smallest = best;
         result
     } else {
         // Try to find minimum faster by recursively checking multiple points.
@@ -76,6 +78,7 @@ unsafe fn find_minimum(f: FindMinimumFun, context: *const c_void, start: usize, 
             pos = p[besti];
             lastbest = best;
         }
+        *smallest = lastbest;
         pos
     }
 }
@@ -90,14 +93,12 @@ unsafe fn find_minimum(f: FindMinimumFun, context: *const c_void, start: usize, 
  * lstart: start of block
  * lend: end of block (not inclusive)
  */
-unsafe fn estimate_cost(litlens: *const u16, dists: *const u16, lstart: usize, lend: usize) -> f64 {
-    calculate_block_size(litlens, dists, lstart, lend, 2)
+unsafe fn estimate_cost(lz77: *const LZ77Store, lstart: usize, lend: usize) -> f64 {
+    calculate_block_size_auto_type(lz77, lstart, lend)
 }
 
 struct SplitCostContext {
-    litlens: *const u16,
-    dists: *const u16,
-    _llsize: usize,
+    lz77: *const LZ77Store,
     start: usize,
     end: usize,
 }
@@ -107,7 +108,7 @@ struct SplitCostContext {
 /// type: FindMinimumFun
 unsafe fn split_cost(i: usize, context: *const c_void) -> f64 {
     let c: *const SplitCostContext = transmute(context);
-    estimate_cost((*c).litlens, (*c).dists, (*c).start, i) + estimate_cost((*c).litlens, (*c).dists, i, (*c).end)
+    estimate_cost((*c).lz77, (*c).start, i) + estimate_cost((*c).lz77, i, (*c).end)
 }
 
 unsafe fn add_sorted(value: usize, out: *mut *mut usize, outsize: *mut usize) {
@@ -128,7 +129,7 @@ unsafe fn add_sorted(value: usize, out: *mut *mut usize, outsize: *mut usize) {
 }
 
 /// Prints the block split points as decimal and hex values in the terminal.
-unsafe fn print_block_split_points(litlens: *const u16, dists: *const u16, llsize: usize, lz77splitpoints: *const usize, nlz77points: usize) {
+unsafe fn print_block_split_points(lz77: *const LZ77Store, lz77splitpoints: *const usize, nlz77points: usize) {
     let mut splitpoints: *mut usize = null_mut();
     let mut npoints: usize = 0;
 
@@ -136,8 +137,8 @@ unsafe fn print_block_split_points(litlens: *const u16, dists: *const u16, llsiz
     // index values.
     let mut pos: usize = 0;
     if nlz77points > 0 {
-        for i in 0..llsize {
-            let length: usize = if *dists.offset(i as isize) == 0 { 1 } else { *litlens.offset(i as isize) as usize };
+        for i in 0..(*lz77).size {
+            let length: usize = if *(*lz77).dists.offset(i as isize) == 0 { 1 } else { *(*lz77).litlens.offset(i as isize) as usize };
             if *lz77splitpoints.offset(npoints as isize) == i {
                 append_data!(pos, splitpoints, npoints);
                 if npoints == nlz77points {
@@ -165,7 +166,7 @@ unsafe fn print_block_split_points(litlens: *const u16, dists: *const u16, llsiz
 /// Finds next block to try to split, the largest of the available ones.
 /// The largest is chosen to make sure that if only a limited amount of blocks is
 /// requested, their sizes are spread evenly.
-/// llsize: the size of the LL77 data, which is the size of the done array here.
+/// lz77size: the size of the LL77 data, which is the size of the done array here.
 /// done: array indicating which blocks starting at that position are no longer
 ///     splittable (splitting them increases rather than decreases cost).
 /// splitpoints: the splitpoints found so far.
@@ -173,12 +174,12 @@ unsafe fn print_block_split_points(litlens: *const u16, dists: *const u16, llsiz
 /// lstart: output variable, giving start of block.
 /// lend: output variable, giving end of block.
 /// returns 1 if a block was found, 0 if no block found (all are done).
-unsafe fn find_largest_splittable_block(llsize: usize, done: *const u8, splitpoints: *const usize, npoints: usize, lstart: *mut usize, lend: *mut usize) -> bool {
+unsafe fn find_largest_splittable_block(lz77size: usize, done: *const u8, splitpoints: *const usize, npoints: usize, lstart: *mut usize, lend: *mut usize) -> bool {
     let mut longest: usize = 0;
     let mut found = false;
     for i in 0..npoints+1 {
         let start: usize = if i == 0 { 0 } else { *splitpoints.offset(i as isize - 1) };
-        let end: usize = if i == npoints { llsize - 1 } else { *splitpoints.offset(i as isize) };
+        let end: usize = if i == npoints { lz77size - 1 } else { *splitpoints.offset(i as isize) };
         if *done.offset(start as isize) == 0 && end - start > longest {
             *lstart = start;
             *lend = end;
@@ -191,26 +192,23 @@ unsafe fn find_largest_splittable_block(llsize: usize, done: *const u8, splitpoi
 
 /// Does blocksplitting on LZ77 data.
 /// The output splitpoints are indices in the LZ77 data.
-/// litlens: lz77 lit/lengths
-/// dists: lz77 distances
-/// llsize: size of litlens and dists
 /// maxblocks: set a limit to the amount of blocks. Set to 0 to mean no limit.
-pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dists: *const u16, llsize: usize, maxblocks: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
-    if llsize < 10 {
+pub unsafe fn block_split_lz77(options: *const Options, lz77: *const LZ77Store, maxblocks: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
+    if (*lz77).size < 10 {
         // This code fails on tiny files.
         return;
     }
 
-    let done: *mut u8 = transmute(malloc(llsize as size_t));
+    let done: *mut u8 = transmute(malloc((*lz77).size as size_t));
     if done.is_null() {
         panic!("Allocation failed!");
     }
-    for i in 0..llsize {
+    for i in 0..(*lz77).size {
         *done.offset(i as isize) = 0;
     }
 
     let mut lstart: usize = 0;
-    let mut lend: usize = llsize;
+    let mut lend: usize = (*lz77).size;
     let mut numblocks: usize = 1;
     loop {
         if maxblocks > 0 && numblocks >= maxblocks {
@@ -218,20 +216,18 @@ pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dis
         }
 
         let mut c = SplitCostContext {
-            litlens: litlens,
-            dists: dists,
-            _llsize: llsize,
+            lz77: lz77,
             start: lstart,
             end: lend,
         };
         assert!(lstart < lend);
-        let llpos: usize = find_minimum(split_cost, &mut c as *mut _ as *mut c_void, lstart + 1, lend);
+        let mut splitcost: f64 = uninitialized();
+        let llpos: usize = find_minimum(split_cost, &mut c as *mut _ as *mut c_void, lstart + 1, lend, &mut splitcost);
 
         assert!(llpos > lstart);
         assert!(llpos < lend);
 
-        let splitcost: f64 = estimate_cost(litlens, dists, lstart, llpos) + estimate_cost(litlens, dists, llpos, lend);
-        let origcost: f64 = estimate_cost(litlens, dists, lstart, lend);
+        let origcost: f64 = estimate_cost(lz77, lstart, lend);
 
         if splitcost > origcost || llpos == lstart + 1 || llpos == lend {
             *done.offset(lstart as isize) = 1;
@@ -240,7 +236,7 @@ pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dis
             numblocks += 1;
         }
 
-        if !find_largest_splittable_block(llsize, done, *splitpoints, *npoints, &mut lstart, &mut lend) {
+        if !find_largest_splittable_block((*lz77).size, done, *splitpoints, *npoints, &mut lstart, &mut lend) {
             // No further split will probably reduce compression.
             break;
         }
@@ -251,7 +247,7 @@ pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dis
     }
 
     if (*options).verbose {
-        print_block_split_points(litlens, dists, llsize, *splitpoints, *npoints);
+        print_block_split_points(lz77, *splitpoints, *npoints);
     }
 
     free(transmute(done));
@@ -272,10 +268,10 @@ pub unsafe fn block_split_lz77(options: *const Options, litlens: *const u16, dis
  *   blocks is the amount of splitpoitns + 1.
  */
 pub unsafe fn block_split(options: *const Options, in_: *const u8, instart: usize, inend: usize, maxblocks: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
-    let s = BlockState::new(options, instart, inend, null_mut());
+    let mut s = BlockState::new(options, instart, inend, false);
     let mut lz77splitpoints: *mut usize = null_mut();
     let mut nlz77points: usize = 0;
-    let mut store = LZ77Store::new();
+    let mut store = LZ77Store::new(in_);
 
     *npoints = 0;
     *splitpoints = null_mut();
@@ -284,7 +280,7 @@ pub unsafe fn block_split(options: *const Options, in_: *const u8, instart: usiz
     // results in better blocks.
     lz77_greedy(&s, in_, instart, inend, &mut store);
 
-    block_split_lz77(options, store.litlens, store.dists, store.size, maxblocks, &mut lz77splitpoints, &mut nlz77points);
+    block_split_lz77(options, &store, maxblocks, &mut lz77splitpoints, &mut nlz77points);
 
     // Convert LZ77 positions to positions in the uncompressed input.
     let mut pos: usize = instart;
@@ -303,15 +299,6 @@ pub unsafe fn block_split(options: *const Options, in_: *const u8, instart: usiz
     assert_eq!(*npoints, nlz77points);
 
     free(lz77splitpoints as *mut c_void);
-    clean_lz77_store(&mut store);
-}
-
-/// Divides the input into equal blocks, does not even take LZ77 lengths into
-/// account.
-pub unsafe fn block_split_simple(_in: *const u8, instart: usize, inend: usize, blocksize: usize, splitpoints: *mut *mut usize, npoints: *mut usize) {
-    let mut i: usize = instart;
-    while i < inend {
-        append_data!(i, *splitpoints, *npoints);
-        i += blocksize;
-    }
+    clean_block_state(&mut s);
+    LZ77Store::clean(&mut store);
 }

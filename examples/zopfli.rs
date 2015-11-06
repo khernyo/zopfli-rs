@@ -32,7 +32,7 @@ fn main() {
             } else if arg == "--gzip" {
                 output_type = Format::GZIP;
             } else if arg == "--splitlast" {
-                options.blocksplittinglast = true;
+                // Ignore
             } else if arg.starts_with("--i") && arg.len() > 3 && arg.chars().nth(3).unwrap() >= '0' && arg.chars().nth(3).unwrap() <= '9' {
                 options.numiterations = i32::from_str_radix(&arg[3..], 10).unwrap();
             } else if arg == "-h" {
@@ -45,7 +45,7 @@ Usage: zopfli [OPTION]... FILE...
   --gzip        output to gzip format (default)
   --zlib        output to zlib format instead of gzip
   --deflate     output to deflate format instead of gzip
-  --splitlast   do block splitting last instead of first");
+  --splitlast   ignored, left for backwards compatibility");
                 std::process::exit(1);
             }
         }
