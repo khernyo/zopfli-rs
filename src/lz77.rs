@@ -5,8 +5,7 @@ use std;
 use std::mem::{size_of, size_of_val, uninitialized};
 use std::ptr::null_mut;
 
-use libc::funcs::c95::stdlib::{free, malloc};
-use libc::{c_void, size_t};
+use libc::{c_void, free, malloc, size_t};
 
 #[cfg(feature = "longest-match-cache")]
 use super::cache;

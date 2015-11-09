@@ -2,8 +2,7 @@ use std::io::Write;
 use std::mem::{size_of, uninitialized};
 use std::ptr::null_mut;
 
-use libc::{c_void, size_t};
-use libc::funcs::c95::stdlib::{free, malloc};
+use libc::{c_void, free, malloc, size_t};
 
 use deflate::calculate_block_size;
 use hash::{update_hash, warmup_hash, Hash};

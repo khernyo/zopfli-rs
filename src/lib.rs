@@ -85,8 +85,7 @@ pub unsafe fn compress(options: *const Options, output_type: Format, input: *con
 mod test {
     extern crate flate2;
 
-    use libc::{c_void, size_t};
-    use libc::funcs::c95::string::memcmp;
+    use libc::{c_void, memcmp, size_t};
     use std::io::Read;
     use std::ptr::null_mut;
     use std::slice;

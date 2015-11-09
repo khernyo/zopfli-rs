@@ -1,8 +1,7 @@
 
 use std::mem;
 
-use libc::{c_void, size_t};
-use libc::funcs::c95::stdlib::{free, malloc};
+use libc::{c_void, free, malloc, size_t};
 
 pub unsafe fn lengths_to_symbols(lengths: *const u32, n: usize, maxbits: u32, symbols: *mut u32) {
     let bl_count: *mut size_t = malloc((mem::size_of::<size_t>() * (maxbits as usize + 1)) as size_t) as *mut size_t;

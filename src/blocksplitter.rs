@@ -8,8 +8,7 @@ use std::io::Write;
 use std::mem::{transmute, uninitialized};
 use std::ptr::null_mut;
 
-use libc::{c_void, size_t};
-use libc::funcs::c95::stdlib::{free, malloc};
+use libc::{c_void, free, malloc, size_t};
 
 use super::Options;
 

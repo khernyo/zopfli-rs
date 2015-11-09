@@ -7,8 +7,7 @@
 use std::mem;
 use std::ptr::{null, null_mut};
 
-use libc::{c_void, size_t};
-use libc::funcs::c95::stdlib::{free, malloc};
+use libc::{c_void, free, malloc, size_t};
 
 /// Nodes forming chains. Also used to represent leaves.
 struct Node {

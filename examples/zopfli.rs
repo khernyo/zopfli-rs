@@ -9,8 +9,7 @@ use std::ptr;
 use std::ptr::null_mut;
 use std::slice;
 
-use libc::{c_void, size_t};
-use libc::funcs::c95::stdlib::{free, malloc};
+use libc::{c_void, free, malloc, size_t};
 
 use zopfli::*;
 

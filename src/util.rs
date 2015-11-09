@@ -183,10 +183,10 @@ macro_rules! append_data {
                 *data =
                     if *size == 0 {
                         let malloc_size = ::std::mem::size_of_val(&**data) as ::libc::size_t;
-                        ::std::mem::transmute(::libc::funcs::c95::stdlib::malloc(malloc_size))
+                        ::std::mem::transmute(::libc::malloc(malloc_size))
                     } else {
                         let new_size = (*size * 2 * ::std::mem::size_of_val(&**data)) as ::libc::size_t;
-                        ::std::mem::transmute(::libc::funcs::c95::stdlib::realloc(*data as *mut ::libc::c_void, new_size))
+                        ::std::mem::transmute(::libc::realloc(*data as *mut ::libc::c_void, new_size))
                     }
             }
             *(*data).offset(*size as isize) = value;
