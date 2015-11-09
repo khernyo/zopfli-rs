@@ -221,14 +221,14 @@ unsafe fn get_best_lengths(s: &mut BlockState,
         update_hash(in_, i, inend, &mut hash);
 
         #[cfg(feature = "shortcut-long-repetitions")]
-        unsafe fn shortcut_long_repetitions(in_: &[u8], instart: usize, inend: usize, costmodel: CostModelFun, costcontext: *const c_void, length_array: &mut Vec<u16>, h: &mut Hash, i: *mut usize, j: *mut usize, costs: &mut Vec<f32>) {
+        unsafe fn shortcut_long_repetitions(in_: &[u8], instart: usize, inend: usize, costmodel: CostModelFun, costcontext: *const c_void, length_array: &mut Vec<u16>, h: &mut Hash, i: &mut usize, j: &mut usize, costs: &mut Vec<f32>) {
             use util::WINDOW_MASK;
             // If we're in a long repetition of the same character and have more than
             // ZOPFLI_MAX_MATCH characters before and after our position.
-            if (*h).hash_same.same[*i & WINDOW_MASK] as usize > MAX_MATCH * 2
+            if h.hash_same.same[*i & WINDOW_MASK] as usize > MAX_MATCH * 2
                 && *i > instart + MAX_MATCH + 1
                 && *i + MAX_MATCH * 2 + 1 < inend
-                && (*h).hash_same.same[(*i - MAX_MATCH) & WINDOW_MASK] as usize > MAX_MATCH {
+                && h.hash_same.same[(*i - MAX_MATCH) & WINDOW_MASK] as usize > MAX_MATCH {
                     let symbolcost: f64 = costmodel(MAX_MATCH as u32, 1, costcontext);
                     // Set the length to reach each one to ZOPFLI_MAX_MATCH, and the cost to
                     // the cost corresponding to that length. Doing this, we skip
@@ -243,7 +243,7 @@ unsafe fn get_best_lengths(s: &mut BlockState,
                 }
         }
         #[cfg(not(feature = "shortcut-long-repetitions"))]
-        fn shortcut_long_repetitions(_in: &[u8], _instart: usize, _inend: usize, _costmodel: CostModelFun, _costcontext: *const c_void, _length_array: &Vec<u16>, _h: &Hash, _i: *const usize, _j: *const usize, _costs: &Vec<f32>) { }
+        fn shortcut_long_repetitions(_in: &[u8], _instart: usize, _inend: usize, _costmodel: CostModelFun, _costcontext: *const c_void, _length_array: &Vec<u16>, _h: &Hash, _i: &usize, _j: &usize, _costs: &Vec<f32>) { }
         shortcut_long_repetitions(in_, instart, inend, costmodel, costcontext, length_array, &mut hash, &mut i, &mut j, &mut costs);
 
         find_longest_match(s, &hash, in_, i, inend, MAX_MATCH, &mut sublen, &mut dist, &mut leng);
