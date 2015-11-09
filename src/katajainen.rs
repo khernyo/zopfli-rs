@@ -4,7 +4,6 @@
 
 use std::iter;
 use std::mem;
-use std::ptr::{null, null_mut};
 
 use libc::{c_void, size_t};
 
@@ -13,7 +12,7 @@ struct Node {
     /// Total weight (symbol count) of this chain.
     weight: usize,
     /// Previous node(s) of this chain, or 0 if none.
-    tail: *mut Node,
+    tail: Option<*mut Node>,
     /// Leaf symbol index, or number of leaves before this chain.
     count: i32,
     /// Tracking for garbage collection.
@@ -36,7 +35,7 @@ impl NodePool {
             nodes: (0..pool_size).map(|_| {
                 Node {
                     weight: 0,
-                    tail: null_mut(),
+                    tail: None,
                     count: 0,
                     in_use: false,
                 }
@@ -47,7 +46,7 @@ impl NodePool {
     }
 }
 /// Initializes a chain node with the given values and marks it as in use.
-unsafe fn init_node(weight: usize, count: i32, tail: *mut Node, node: *mut Node) {
+unsafe fn init_node(weight: usize, count: i32, tail: Option<*mut Node>, node: *mut Node) {
     (*node).weight = weight;
     (*node).count = count;
     (*node).tail = tail;
@@ -60,7 +59,7 @@ unsafe fn init_node(weight: usize, count: i32, tail: *mut Node, node: *mut Node)
  * maxbits: Size of lists.
  * pool: Memory pool to get free node from.
  */
-unsafe fn get_free_node(lists: Option<&Vec<[*mut Node; 2]>>,
+unsafe fn get_free_node(lists: Option<&Vec<[Option<*mut Node>; 2]>>,
                         maxbits: i32,
                         pool: &mut NodePool)
                         -> *mut Node {
@@ -73,9 +72,9 @@ unsafe fn get_free_node(lists: Option<&Vec<[*mut Node; 2]>>,
             if let Some(lists) = lists {
                 for i in 0..maxbits * 2 {
                     let mut node = lists[(i / 2) as usize][(i % 2) as usize];
-                    while !node.is_null() {
-                        (*node).in_use = true;
-                        node = (*node).tail;
+                    while node.is_some() {
+                        (*node.unwrap()).in_use = true;
+                        node = (*node.unwrap()).tail;
                     }
                 }
             }
@@ -104,14 +103,14 @@ unsafe fn get_free_node(lists: Option<&Vec<[*mut Node; 2]>>,
  * final: Whether this is the last time this function is called. If it is then it
  *   is no more needed to recursively call self.
  */
-unsafe fn boundary_pm(lists: &mut Vec<[*mut Node; 2]>,
+unsafe fn boundary_pm(lists: &mut Vec<[Option<*mut Node>; 2]>,
                       maxbits: i32,
                       leaves: &[Node],
                       numsymbols: i32,
                       pool: &mut NodePool,
                       index: i32,
                       is_final: bool) {
-    let lastcount = (*lists[index as usize][1]).count; // Count of last chain of list.
+    let lastcount = (*lists[index as usize][1].unwrap()).count; // Count of last chain of list.
 
     if index == 0 && lastcount >= numsymbols {
         return;
@@ -123,22 +122,22 @@ unsafe fn boundary_pm(lists: &mut Vec<[*mut Node; 2]>,
     // These are set up before the recursive calls below, so that there is a list
     // pointing to the new node, to let the garbage collection know it's in use.
     lists[index as usize][0] = oldchain;
-    lists[index as usize][1] = newchain;
+    lists[index as usize][1] = Some(newchain);
 
     if index == 0 {
         // New leaf node in list 0.
         init_node(leaves[lastcount as usize].weight,
                   lastcount + 1,
-                  null_mut(),
+                  None,
                   newchain);
     } else {
-        let sum = (*lists[(index - 1) as usize][0]).weight +
-                  (*lists[(index - 1) as usize][1]).weight;
+        let sum = (*lists[(index - 1) as usize][0].unwrap()).weight +
+                  (*lists[(index - 1) as usize][1].unwrap()).weight;
         if lastcount < numsymbols && sum > leaves[lastcount as usize].weight {
             // New leaf inserted in list, so count is incremented.
             init_node(leaves[lastcount as usize].weight,
                       lastcount + 1,
-                      (*oldchain).tail,
+                      (*oldchain.unwrap()).tail,
                       newchain);
         } else {
             init_node(sum,
@@ -157,12 +156,12 @@ unsafe fn boundary_pm(lists: &mut Vec<[*mut Node; 2]>,
 /// Initializes each list with as lookahead chains the two leaves with lowest weights.
 unsafe fn init_lists(pool: &mut NodePool,
                      leaves: &[Node],
-                     maxbits: i32) -> Vec<[*mut Node; 2]> {
+                     maxbits: i32) -> Vec<[Option<*mut Node>; 2]> {
     let node0 = get_free_node(None, maxbits, pool);
     let node1 = get_free_node(None, maxbits, pool);
-    init_node(leaves[0].weight, 1, null_mut(), node0);
-    init_node(leaves[1].weight, 2, null_mut(), node1);
-    iter::repeat([node0, node1]).take(maxbits as usize).collect()
+    init_node(leaves[0].weight, 1, None, node0);
+    init_node(leaves[1].weight, 2, None, node1);
+    iter::repeat([Some(node0), Some(node1)]).take(maxbits as usize).collect()
 }
 
 /**
@@ -170,14 +169,14 @@ unsafe fn init_lists(pool: &mut NodePool,
  * last chain of the last list contains the amount of active leaves in each list.
  * chain: Chain to extract the bit length from (last chain from last list).
  */
-unsafe fn extract_bit_lengths(chain: *const Node, leaves: &[Node], bitlengths: &mut [u32]) {
+unsafe fn extract_bit_lengths(chain: Option<*mut Node>, leaves: &[Node], bitlengths: &mut [u32]) {
     let mut node = chain;
-    while node != null() {
-        for i in 0..(*node).count {
+    while node.is_some() {
+        for i in 0..(*node.unwrap()).count {
             bitlengths[leaves[i as usize].count as usize] =
                 bitlengths[leaves[i as usize].count as usize] + 1;
         }
-        node = (*node).tail;
+        node = (*node.unwrap()).tail;
     }
 }
 
@@ -217,7 +216,7 @@ pub unsafe fn length_limited_code_lengths(frequencies: &[usize],
             leaves.push(Node {
                 weight: frequencies[i as usize],
                 count: i, // Index of symbol this leaf represents.
-                tail: null_mut(),
+                tail: None,
                 in_use: false,
             });
         }
@@ -248,7 +247,7 @@ pub unsafe fn length_limited_code_lengths(frequencies: &[usize],
 
     // Array of lists of chains. Each list requires only two lookahead chains at
     // a time, so each list is a array of two Node*'s.
-    let mut lists: Vec<[*mut Node; 2]> = init_lists(&mut pool, &leaves, maxbits);
+    let mut lists: Vec<[Option<*mut Node>; 2]> = init_lists(&mut pool, &leaves, maxbits);
 
     // In the last list, 2 * numsymbols - 2 active chains need to be created. Two
     // are already created in the initialization. Each BoundaryPM run creates one.
