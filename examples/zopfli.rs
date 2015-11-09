@@ -26,7 +26,7 @@ fn main() {
             } else if arg == "--gzip" {
                 output_type = Format::GZIP;
             } else if arg == "--splitlast" {
-                options.blocksplittinglast = true;
+                // Ignore
             } else if arg.starts_with("--i") && arg.len() > 3 && arg.chars().nth(3).unwrap() >= '0' && arg.chars().nth(3).unwrap() <= '9' {
                 options.numiterations = i32::from_str_radix(&arg[3..], 10).unwrap();
             } else if arg == "-h" {
@@ -39,7 +39,7 @@ Usage: zopfli [OPTION]... FILE...
   --gzip        output to gzip format (default)
   --zlib        output to zlib format instead of gzip
   --deflate     output to deflate format instead of gzip
-  --splitlast   do block splitting last instead of first");
+  --splitlast   ignored, left for backwards compatibility");
                 std::process::exit(1);
             }
         }
@@ -78,10 +78,7 @@ Usage: zopfli [OPTION]... FILE...
 
 /// outfilename: filename to write output to, or 0 to write to stdout instead
 unsafe fn compress_file(options: &Options, output_type: Format, infilename: &str, outfilename: Option<String>) {
-    let input = load_file(infilename);
-    if input.len() == 0 {
-        println_err!("Invalid filename: {}", infilename);
-    } else {
+    if let Some(input) = load_file(infilename) {
         let output = compress(options, output_type, &input);
 
         if let Some(f) = outfilename {
@@ -89,11 +86,15 @@ unsafe fn compress_file(options: &Options, output_type: Format, infilename: &str
         } else {
             std::io::stdout().write(&output).unwrap();
         }
+    } else {
+        println_err!("Invalid filename: {}", infilename);
     }
 }
 
-fn load_file(filename: &str) -> Vec<u8> {
-    let mut f = File::open(filename).unwrap();
+fn load_file(filename: &str) -> Option<Vec<u8>> {
+    let f = File::open(filename);
+    if f.is_err() { return None; }
+    let mut f = f.unwrap();
     let size = f.metadata().unwrap().len();
     if size > 2147483647 {
         println_err!("Files larger than 2GB are not supported.");
@@ -101,7 +102,7 @@ fn load_file(filename: &str) -> Vec<u8> {
     }
     let mut b = Vec::new();
     assert_eq!(f.read_to_end(&mut b).unwrap(), size as usize);
-    b
+    Some(b)
 }
 
 fn save_file(filename: &str, buf: &[u8]) {

@@ -9,28 +9,28 @@ use hash::{Hash, update_hash, warmup_hash};
 use lz77::{BlockState, LZ77Store, find_longest_match, lz77_greedy, store_litlen_dist,
            verify_len_dist};
 use tree::calculate_entropy;
-use util::{LARGE_FLOAT, MAX_MATCH, MIN_MATCH, WINDOW_SIZE, get_dist_extra_bits, get_dist_symbol,
-           get_length_extra_bits, get_length_symbol};
+use util::{LARGE_FLOAT, MAX_MATCH, MIN_MATCH, NUM_D, NUM_LL, WINDOW_SIZE, get_dist_extra_bits,
+           get_dist_symbol, get_length_extra_bits, get_length_symbol};
 
 struct SymbolStats {
     /// The literal and length symbols.
-    litlens: [usize; 288],
+    litlens: [usize; NUM_LL],
     /// The 32 unique dist symbols, not the 32768 possible dists.
-    dists: [usize; 32],
+    dists: [usize; NUM_D],
 
     /// Length of each lit/len symbol in bits.
-    ll_symbols: [f64; 288],
+    ll_symbols: [f64; NUM_LL],
     /// Length of each dist symbol in bits.
-    d_symbols: [f64; 32],
+    d_symbols: [f64; NUM_D],
 }
 
 impl SymbolStats {
     fn new() -> SymbolStats {
         SymbolStats {
-            litlens: [0usize; 288],
-            dists: [0usize; 32],
-            ll_symbols: [0f64; 288],
-            d_symbols: [0f64; 32],
+            litlens: [0usize; NUM_LL],
+            dists: [0usize; NUM_D],
+            ll_symbols: [0f64; NUM_LL],
+            d_symbols: [0f64; NUM_D],
         }
     }
 }
@@ -44,11 +44,11 @@ unsafe fn copy_stats(source: &SymbolStats, dest: &mut SymbolStats) {
 
 /// Adds the bit lengths.
 fn add_weighed_stat_freqs(stats1: &mut SymbolStats, w1: f64, stats2: &SymbolStats, w2: f64) {
-    for i in 0..288 {
+    for i in 0..NUM_LL {
         stats1.litlens[i] =
             (stats1.litlens[i] as f64 * w1 + stats2.litlens[i] as f64 * w2) as usize;
     }
-    for i in 0..32 {
+    for i in 0..NUM_D {
         stats1.dists[i] = (stats1.dists[i] as f64 * w1 + stats2.dists[i] as f64 * w2) as usize;
     }
     stats1.litlens[256] = 1; // End symbol.
@@ -88,8 +88,8 @@ fn randomize_stat_freqs(state: &mut RanState, stats: &mut SymbolStats) {
 }
 
 fn clear_stat_freqs(stats: &mut SymbolStats) {
-    stats.litlens = [0; 288];
-    stats.dists = [0; 32];
+    stats.litlens = [0; NUM_LL];
+    stats.dists = [0; NUM_D];
 }
 
 /// Function that calculates a cost based on a model for the given LZ77 symbol.
@@ -343,11 +343,11 @@ unsafe fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usi
             find_longest_match(s, &hash, in_, pos, inend, length as usize, &mut None, &mut dist, &mut dummy_length);
             assert!(!(dummy_length != length && length > 2 && dummy_length > 2));
             verify_len_dist(in_, inend, pos, dist, length);
-            store_litlen_dist(length, dist, store);
+            store_litlen_dist(length, dist, pos, store);
             _total_length_test += length as usize;
         } else {
             length = 1;
-            store_litlen_dist(in_[pos] as u16, 0, store);
+            store_litlen_dist(in_[pos] as u16, 0, pos, store);
             _total_length_test += 1;
         }
 
@@ -393,7 +393,7 @@ fn get_statistics(store: &LZ77Store, stats: &mut SymbolStats) {
  * inend: where to stop (not inclusive)
  * path: pointer to dynamically allocated memory to store the path
  * pathsize: pointer to the size of the dynamic path array
- * length_array: array if size (inend - instart) used to store lengths
+ * length_array: array of size (inend - instart) used to store lengths
  * costmodel: function to use as the cost model for this squeeze run
  * costcontext: abstract context for the costmodel function
  * store: place to output the LZ77 data
@@ -423,16 +423,17 @@ unsafe fn lz77_optimal_run(s: &mut BlockState,
 /// Calculates lit/len and dist pairs for given data.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-pub unsafe fn lz77_optimal(s: &mut BlockState,
-                           in_: &[u8],
-                           instart: usize,
-                           inend: usize,
-                           store: &mut LZ77Store) {
+pub unsafe fn lz77_optimal<'a>(s: &mut BlockState,
+                               in_: &'a [u8],
+                               instart: usize,
+                               inend: usize,
+                               numiterations: i32,
+                               store: &mut LZ77Store<'a>) {
     // Dist to get to here with smallest cost.
     let blocksize: usize = inend - instart;
     let mut length_array: Vec<u16> = iter::repeat(0).take(blocksize + 1).collect();
     let mut path: Vec<u16> = Vec::new();
-    let mut currentstore = LZ77Store::new();
+    let mut currentstore = LZ77Store::new(in_);
     let mut stats = SymbolStats::new();
     let mut beststats = SymbolStats::new();
     let mut laststats = SymbolStats::new();
@@ -452,10 +453,10 @@ pub unsafe fn lz77_optimal(s: &mut BlockState,
 
     // Repeat statistics with each time the cost model from the previous stat
     // run.
-    for i in 0..(*s.options).numiterations {
-        LZ77Store::init(&mut currentstore);
+    for i in 0..numiterations {
+        let mut currentstore = LZ77Store::new(in_);
         lz77_optimal_run(s, in_, instart, inend, &mut path, &mut length_array, get_cost_stat, &stats as *const _ as *const c_void, &mut currentstore);
-        cost = calculate_block_size(&currentstore.litlens, &currentstore.dists, 0, currentstore.litlens.len(), 2);
+        cost = calculate_block_size(&currentstore, 0, currentstore.size, 2);
         if (*s.options).verbose_more || ((*s.options).verbose && cost < bestcost) {
             println_err!("Iteration {}: {} bit", i, cost as i32);
         }
