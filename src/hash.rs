@@ -2,8 +2,7 @@ use std::iter;
 use std::mem::size_of_val;
 use std::ptr::null_mut;
 
-use libc::funcs::c95::stdlib::{free, malloc};
-use libc::{c_void, size_t};
+use libc::{c_void, free, malloc, size_t};
 
 use util::{MIN_MATCH, WINDOW_MASK};
 

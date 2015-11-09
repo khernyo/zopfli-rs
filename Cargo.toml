@@ -9,7 +9,7 @@ readme = "README.md"
 
 [dependencies]
 log = "*"
-libc = "0.1.0"
+libc = "0.2"
 
 [dev-dependencies]
 flate2 = "*"
