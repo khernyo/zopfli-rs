@@ -35,7 +35,7 @@ impl SymbolStats {
     }
 }
 
-unsafe fn copy_stats(source: &SymbolStats, dest: &mut SymbolStats) {
+fn copy_stats(source: &SymbolStats, dest: &mut SymbolStats) {
     dest.litlens = source.litlens;
     dest.dists = source.dists;
     dest.ll_symbols = source.ll_symbols;

@@ -64,7 +64,7 @@ pub fn calculate_entropy(count: &[usize], bitlengths: &mut [f64]) {
     }
 }
 
-pub unsafe fn calculate_bit_lengths(count: &[usize], n: usize, maxbits: i32, bitlengths: &mut [u32]) {
+pub fn calculate_bit_lengths(count: &[usize], n: usize, maxbits: i32, bitlengths: &mut [u32]) {
     let error = super::katajainen::length_limited_code_lengths(count, n as i32, maxbits, bitlengths);
     assert!(!error);
 }

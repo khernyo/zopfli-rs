@@ -154,14 +154,14 @@ pub fn store_litlen_dist(length: u16, dist: u16, pos: usize, store: &mut LZ77Sto
     assert_eq!(store.d_symbol.len(), store.size);
 }
 
-pub unsafe fn append_lz77_store(store: &LZ77Store, target: &mut LZ77Store) {
+pub fn append_lz77_store(store: &LZ77Store, target: &mut LZ77Store) {
     for i in 0..store.size {
         store_litlen_dist(store.litlens[i], store.dists[i], store.pos[i], target);
     }
 }
 
 /// Gets the amount of raw bytes that this range of LZ77 symbols spans.
-pub unsafe fn lz77_get_byte_range(lz77: &LZ77Store, lstart: usize, lend: usize) -> usize {
+pub fn lz77_get_byte_range(lz77: &LZ77Store, lstart: usize, lend: usize) -> usize {
     if lstart == lend {
         0
     } else {
@@ -170,10 +170,10 @@ pub unsafe fn lz77_get_byte_range(lz77: &LZ77Store, lstart: usize, lend: usize) 
     }
 }
 
-unsafe fn lz77_get_histogram_at(lz77: &LZ77Store,
-                                lpos: usize,
-                                ll_counts: &mut [usize; NUM_LL],
-                                d_counts: &mut [usize; NUM_D]) {
+fn lz77_get_histogram_at(lz77: &LZ77Store,
+                         lpos: usize,
+                         ll_counts: &mut [usize; NUM_LL],
+                         d_counts: &mut [usize; NUM_D]) {
     // The real histogram is created by using the histogram for this chunk, but
     // all superfluous values of this chunk subtracted.
     let llpos: usize = NUM_LL * (lpos / NUM_LL);
@@ -201,8 +201,8 @@ unsafe fn lz77_get_histogram_at(lz77: &LZ77Store,
 /// Gets the histogram of lit/len and dist symbols in the given range, using the
 /// cumulative histograms, so faster than adding one by one for large range. Does
 /// not add the one end symbol of value 256.
-pub unsafe fn lz77_get_histogram(lz77: &LZ77Store, lstart: usize, lend: usize)
-                                 -> ([usize; NUM_LL], [usize; NUM_D]) {
+pub fn lz77_get_histogram(lz77: &LZ77Store, lstart: usize, lend: usize)
+                          -> ([usize; NUM_LL], [usize; NUM_D]) {
     let mut ll_counts: [usize; NUM_LL] = [0; NUM_LL];
     let mut d_counts: [usize; NUM_D] = [0; NUM_D];
     if lstart + NUM_LL * 3 > lend {
@@ -350,13 +350,13 @@ fn try_get_from_longest_match_cache(_s: &mut BlockState,
 /// Updates the limit value to a smaller one if possible with more limited
 /// information from the cache.
 #[cfg(feature = "longest-match-cache")]
-unsafe fn try_get_from_longest_match_cache(s: &mut BlockState,
-                                           pos: usize,
-                                           limit: &mut usize,
-                                           sublen: &mut Option<[u16; 259]>,
-                                           distance: &mut u16,
-                                           length: &mut u16)
-                                           -> bool {
+fn try_get_from_longest_match_cache(s: &mut BlockState,
+                                    pos: usize,
+                                    limit: &mut usize,
+                                    sublen: &mut Option<[u16; 259]>,
+                                    distance: &mut u16,
+                                    length: &mut u16)
+                                    -> bool {
     // The LMC cache starts at the beginning of the block rather than the
     // beginning of the whole array.
     let lmcpos: usize = pos - s.blockstart;
@@ -407,12 +407,12 @@ fn store_in_longest_match_cache(_s: &BlockState,
 /// Stores the found sublen, distance and length in the longest match cache, if
 /// possible.
 #[cfg(feature = "longest-match-cache")]
-unsafe fn store_in_longest_match_cache(s: &mut BlockState,
-                                       pos: usize,
-                                       limit: usize,
-                                       sublen: &Option<[u16; 259]>,
-                                       distance: u16,
-                                       length: u16) {
+fn store_in_longest_match_cache(s: &mut BlockState,
+                                pos: usize,
+                                limit: usize,
+                                sublen: &Option<[u16; 259]>,
+                                distance: u16,
+                                length: u16) {
     // The LMC cache starts at the beginning of the block rather than the
     // beginning of the whole array.
     let lmcpos: usize = pos - s.blockstart;

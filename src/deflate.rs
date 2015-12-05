@@ -91,14 +91,14 @@ fn patch_distance_codes_for_buggy_decoders(d_lengths: &mut [u32]) {
 
 /// Encodes the Huffman tree and returns how many bits its encoding takes. If out
 /// is a null pointer, only returns the size and runs faster.
-unsafe fn encode_tree(ll_lengths: &[u32; 288],
-                      d_lengths: &[u32; 32],
-                      use_16: bool,
-                      use_17: bool,
-                      use_18: bool,
-                      bp: Option<&mut u8>,
-                      out: Option<&mut Vec<u8>>)
-                      -> usize {
+fn encode_tree(ll_lengths: &[u32; 288],
+               d_lengths: &[u32; 32],
+               use_16: bool,
+               use_17: bool,
+               use_18: bool,
+               bp: Option<&mut u8>,
+               out: Option<&mut Vec<u8>>)
+               -> usize {
     let mut rle: Vec<u32> = Vec::new(); // Runlength encoded version of lengths of litlen and dist trees.
     let mut rle_bits: Vec<u32> = Vec::new(); // Extra bits for rle values 16, 17 and 18.
     let mut hlit: u32 = 29; // 286 - 257
@@ -246,10 +246,7 @@ unsafe fn encode_tree(ll_lengths: &[u32; 288],
     result_size
 }
 
-unsafe fn add_dynamic_tree(ll_lengths: &[u32; 288],
-                           d_lengths: &[u32; 32],
-                           bp: &mut u8,
-                           out: &mut Vec<u8>) {
+fn add_dynamic_tree(ll_lengths: &[u32; 288], d_lengths: &[u32; 32], bp: &mut u8, out: &mut Vec<u8>) {
     let mut best: i32 = 0;
     let mut bestsize: usize = 0;
 
@@ -265,7 +262,7 @@ unsafe fn add_dynamic_tree(ll_lengths: &[u32; 288],
 }
 
 /// Gives the exact size of the tree, in bits, as it will be encoded in DEFLATE.
-unsafe fn calculate_tree_size(ll_lengths: &[u32; 288], d_lengths: &[u32; 32]) -> usize {
+fn calculate_tree_size(ll_lengths: &[u32; 288], d_lengths: &[u32; 32]) -> usize {
     let mut result: usize = 0;
 
     for i in 0..8 {
@@ -463,10 +460,7 @@ fn optimize_huffman_for_rle(counts: &mut [usize]) {
 /// lengths that give the smallest size of tree encoding + encoding of all the
 /// symbols to have smallest output size. This are not necessarily the ideal Huffman
 /// bit lengths.
-unsafe fn get_dynamic_lengths(lz77: &LZ77Store,
-                              lstart: usize,
-                              lend: usize)
-                              -> ([u32; 288], [u32; 32]) {
+fn get_dynamic_lengths(lz77: &LZ77Store, lstart: usize, lend: usize) -> ([u32; 288], [u32; 32]) {
     let (mut ll_counts, mut d_counts) = lz77_get_histogram(lz77, lstart, lend);
     ll_counts[256] = 1;  // End symbol.
     optimize_huffman_for_rle(&mut ll_counts);
@@ -484,11 +478,7 @@ unsafe fn get_dynamic_lengths(lz77: &LZ77Store,
 /// dists: ll77 distances
 /// lstart: start of block
 /// lend: end of block (not inclusive)
-pub unsafe fn calculate_block_size(lz77: &LZ77Store,
-                                   lstart: usize,
-                                   lend: usize,
-                                   btype: i32)
-                                   -> f64 {
+pub fn calculate_block_size(lz77: &LZ77Store, lstart: usize, lend: usize, btype: i32) -> f64 {
     // bfinal and btype bits
     let mut result: f64 = 3.0;
 
@@ -517,7 +507,7 @@ pub unsafe fn calculate_block_size(lz77: &LZ77Store,
 }
 
 /// Calculates block size in bits, automatically using the best btype.
-pub unsafe fn calculate_block_size_auto_type(lz77: &LZ77Store, lstart: usize, lend: usize) -> f64 {
+pub fn calculate_block_size_auto_type(lz77: &LZ77Store, lstart: usize, lend: usize) -> f64 {
     let uncompressedcost: f64 = calculate_block_size(lz77, lstart, lend, 0);
     // Don't do the expensive fixed cost calculation for larger blocks that are
     // unlikely to use it.
@@ -534,7 +524,7 @@ pub unsafe fn calculate_block_size_auto_type(lz77: &LZ77Store, lstart: usize, le
 
 /// Since an uncompressed block can be max 65535 in size, it actually adds
 /// multiple blocks if needed.
-unsafe fn add_non_compressed_block(_options: *const Options, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: &mut u8, out: &mut Vec<u8>) {
+fn add_non_compressed_block(_options: *const Options, is_final: bool, in_: &[u8], instart: usize, inend: usize, bp: &mut u8, out: &mut Vec<u8>) {
     let mut pos: usize = instart;
     loop {
         let mut blocksize: u16 = 65535;
@@ -585,15 +575,15 @@ unsafe fn add_non_compressed_block(_options: *const Options, is_final: bool, in_
  * out: dynamic output array to append to
  * outsize: dynamic output array size
  */
-unsafe fn add_lz77_block(options: &Options,
-                         btype: i32,
-                         is_final: bool,
-                         lz77: &LZ77Store,
-                         lstart: usize,
-                         lend: usize,
-                         expected_data_size: usize,
-                         bp: &mut u8,
-                         out: &mut Vec<u8>) {
+fn add_lz77_block(options: &Options,
+                  btype: i32,
+                  is_final: bool,
+                  lz77: &LZ77Store,
+                  lstart: usize,
+                  lend: usize,
+                  expected_data_size: usize,
+                  bp: &mut u8,
+                  out: &mut Vec<u8>) {
     if btype == 0 {
         let length: usize = lz77_get_byte_range(lz77, lstart, lend);
         let pos: usize = if lstart == lend { 0 } else { lz77.pos[lstart] };

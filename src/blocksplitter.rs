@@ -84,7 +84,7 @@ fn find_minimum<F>(f: F, start: usize, end: usize) -> (usize, f64)
  * lstart: start of block
  * lend: end of block (not inclusive)
  */
-unsafe fn estimate_cost(lz77: &LZ77Store, lstart: usize, lend: usize) -> f64 {
+fn estimate_cost(lz77: &LZ77Store, lstart: usize, lend: usize) -> f64 {
     calculate_block_size_auto_type(lz77, lstart, lend)
 }
 
@@ -97,7 +97,7 @@ struct SplitCostContext<'a> {
 /// Gets the cost which is the sum of the cost of the left and the right section
 /// of the data.
 /// type: FindMinimumFun
-unsafe fn split_cost(i: usize, c: &SplitCostContext) -> f64 {
+fn split_cost(i: usize, c: &SplitCostContext) -> f64 {
     estimate_cost(c.lz77, c.start, i) + estimate_cost(c.lz77, i, c.end)
 }
 
@@ -186,10 +186,10 @@ fn find_largest_splittable_block(lz77size: usize,
 /// Does blocksplitting on LZ77 data.
 /// The output splitpoints are indices in the LZ77 data.
 /// maxblocks: set a limit to the amount of blocks. Set to 0 to mean no limit.
-pub unsafe fn block_split_lz77(options: &Options,
-                               lz77: &LZ77Store,
-                               maxblocks: usize,
-                               splitpoints: &mut Vec<usize>) {
+pub fn block_split_lz77(options: &Options,
+                        lz77: &LZ77Store,
+                        maxblocks: usize,
+                        splitpoints: &mut Vec<usize>) {
     if (*lz77).size < 10 {
         // This code fails on tiny files.
         return;
