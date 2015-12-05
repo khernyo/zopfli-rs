@@ -32,3 +32,5 @@ function compare_compression() {
 for i in `find $BASE_PATH -type f -size -$MAX_SIZE -size +0c -readable 2>/dev/null`; do
     compare_compression $i
 done
+
+rmdir $TMP_DIR
