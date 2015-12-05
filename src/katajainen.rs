@@ -207,11 +207,11 @@ extern {
              compar: extern "C" fn(*const c_void, *const c_void) -> i32);
 }
 
-pub unsafe fn length_limited_code_lengths(frequencies: &[usize],
-                                          n: i32,
-                                          maxbits: i32,
-                                          bitlengths: &mut [u32])
-                                          -> bool {
+pub fn length_limited_code_lengths(frequencies: &[usize],
+                                   n: i32,
+                                   maxbits: i32,
+                                   bitlengths: &mut [u32])
+                                   -> bool {
     // One leaf per symbol. Only numsymbols leaves will be used.
     let mut leaves: Vec<Node> = Vec::with_capacity(n as usize);
 
@@ -247,10 +247,12 @@ pub unsafe fn length_limited_code_lengths(frequencies: &[usize],
     }
 
     // Sort the leaves from lightest to heaviest.
-    qsort(leaves.as_mut_ptr() as *mut c_void,
-          numsymbols as size_t,
-          mem::size_of::<Node>() as size_t,
-          leaf_comparator);
+    unsafe {
+        qsort(leaves.as_mut_ptr() as *mut c_void,
+            numsymbols as size_t,
+            mem::size_of::<Node>() as size_t,
+            leaf_comparator);
+    }
 
     // Initialize node memory pool.
     let mut pool = NodePool::new(2 * maxbits as u32 * (maxbits as u32 + 1));
