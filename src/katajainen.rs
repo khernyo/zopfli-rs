@@ -2,8 +2,9 @@
 //! "A Fast and Space-Economical Algorithm for Length-Limited Coding
 //! Jyrki Katajainen, Alistair Moffat, Andrew Turpin".
 
-use std::iter;
+use std::cell::RefCell;
 use std::mem;
+use std::rc::Rc;
 
 use libc::{c_void, size_t};
 
@@ -12,7 +13,7 @@ struct Node {
     /// Total weight (symbol count) of this chain.
     weight: usize,
     /// Previous node(s) of this chain, or 0 if none.
-    tail: Option<*mut Node>,
+    tail: Option<Rc<RefCell<Node>>>,
     /// Leaf symbol index, or number of leaves before this chain.
     count: i32,
     /// Tracking for garbage collection.
@@ -22,7 +23,7 @@ struct Node {
 /// Memory pool for nodes.
 struct NodePool {
     /// The pool.
-    nodes: Vec<Node>,
+    nodes: Vec<Rc<RefCell<Node>>>,
     /// Index of a possibly free node in the pool.
     next: u32,
     /// Size of the memory pool.
@@ -33,24 +34,27 @@ impl NodePool {
     fn new(pool_size: u32) -> NodePool {
         NodePool {
             nodes: (0..pool_size).map(|_| {
-                Node {
+                let node = Node {
                     weight: 0,
                     tail: None,
                     count: 0,
                     in_use: false,
-                }
+                };
+                Rc::new(RefCell::new(node))
             }).collect(),
             next: 0,
             size: pool_size,
         }
     }
 }
+
 /// Initializes a chain node with the given values and marks it as in use.
-unsafe fn init_node(weight: usize, count: i32, tail: Option<*mut Node>, node: *mut Node) {
-    (*node).weight = weight;
-    (*node).count = count;
-    (*node).tail = tail;
-    (*node).in_use = true;
+fn init_node(weight: usize, count: i32, tail: Option<Rc<RefCell<Node>>>, node: Rc<RefCell<Node>>) {
+    let mut node = node.borrow_mut();
+    node.weight = weight;
+    node.count = count;
+    node.tail = tail;
+    node.in_use = true;
 }
 
 /**
@@ -59,33 +63,35 @@ unsafe fn init_node(weight: usize, count: i32, tail: Option<*mut Node>, node: *m
  * maxbits: Size of lists.
  * pool: Memory pool to get free node from.
  */
-unsafe fn get_free_node(lists: Option<&Vec<[Option<*mut Node>; 2]>>,
-                        maxbits: i32,
-                        pool: &mut NodePool)
-                        -> *mut Node {
+fn get_free_node(lists: Option<&Vec<[Option<Rc<RefCell<Node>>>; 2]>>,
+                 maxbits: i32,
+                 pool: &mut NodePool)
+                 -> Rc<RefCell<Node>> {
     loop {
         if pool.next >= pool.size {
             // Garbage collection
             for i in 0..pool.size {
-                pool.nodes[i as usize].in_use = false;
+                pool.nodes[i as usize].borrow_mut().in_use = false;
             }
             if let Some(lists) = lists {
                 for i in 0..maxbits * 2 {
-                    let mut node = lists[(i / 2) as usize][(i % 2) as usize];
-                    while node.is_some() {
-                        (*node.unwrap()).in_use = true;
-                        node = (*node.unwrap()).tail;
+                    let mut node = lists[(i / 2) as usize][(i % 2) as usize].clone();
+                    while let Some(n) = node {
+                        let mut n = n.borrow_mut();
+                        n.in_use = true;
+                        node = n.tail.clone();
                     }
                 }
             }
             pool.next = 0;
         }
-        if !pool.nodes[pool.next as usize].in_use {
+        if !pool.nodes[pool.next as usize].borrow().in_use {
             break;
         }
         pool.next += 1;
     }
-    let free_node = &mut pool.nodes[pool.next as usize];
+    let free_node = pool.nodes[pool.next as usize].clone();
+
     pool.next += 1;
     free_node
 }
@@ -103,26 +109,26 @@ unsafe fn get_free_node(lists: Option<&Vec<[Option<*mut Node>; 2]>>,
  * final: Whether this is the last time this function is called. If it is then it
  *   is no more needed to recursively call self.
  */
-unsafe fn boundary_pm(lists: &mut Vec<[Option<*mut Node>; 2]>,
-                      maxbits: i32,
-                      leaves: &[Node],
-                      numsymbols: i32,
-                      pool: &mut NodePool,
-                      index: i32,
-                      is_final: bool) {
-    let lastcount = (*lists[index as usize][1].unwrap()).count; // Count of last chain of list.
+fn boundary_pm(lists: &mut Vec<[Option<Rc<RefCell<Node>>>; 2]>,
+               maxbits: i32,
+               leaves: &[Node],
+               numsymbols: i32,
+               pool: &mut NodePool,
+               index: i32,
+               is_final: bool) {
+    let lastcount = lists[index as usize][1].as_ref().unwrap().borrow().count; // Count of last chain of list.
 
     if index == 0 && lastcount >= numsymbols {
         return;
     }
 
     let newchain = get_free_node(Some(&lists), maxbits, pool);
-    let oldchain = lists[index as usize][1];
+    let oldchain = lists[index as usize][1].clone();
 
     // These are set up before the recursive calls below, so that there is a list
     // pointing to the new node, to let the garbage collection know it's in use.
-    lists[index as usize][0] = oldchain;
-    lists[index as usize][1] = Some(newchain);
+    lists[index as usize][0] = oldchain.clone();
+    lists[index as usize][1] = Some(newchain.clone());
 
     if index == 0 {
         // New leaf node in list 0.
@@ -131,18 +137,18 @@ unsafe fn boundary_pm(lists: &mut Vec<[Option<*mut Node>; 2]>,
                   None,
                   newchain);
     } else {
-        let sum = (*lists[(index - 1) as usize][0].unwrap()).weight +
-                  (*lists[(index - 1) as usize][1].unwrap()).weight;
+        let sum = lists[(index - 1) as usize][0].as_ref().unwrap().borrow().weight +
+                  lists[(index - 1) as usize][1].as_ref().unwrap().borrow().weight;
         if lastcount < numsymbols && sum > leaves[lastcount as usize].weight {
             // New leaf inserted in list, so count is incremented.
             init_node(leaves[lastcount as usize].weight,
                       lastcount + 1,
-                      (*oldchain.unwrap()).tail,
+                      oldchain.as_ref().unwrap().borrow().tail.clone(),
                       newchain);
         } else {
             init_node(sum,
                       lastcount,
-                      lists[(index - 1) as usize][1],
+                      lists[(index - 1) as usize][1].clone(),
                       newchain);
             if !is_final {
                 // Two lookahead chains of previous list used up, create new ones.
@@ -154,14 +160,18 @@ unsafe fn boundary_pm(lists: &mut Vec<[Option<*mut Node>; 2]>,
 }
 
 /// Initializes each list with as lookahead chains the two leaves with lowest weights.
-unsafe fn init_lists(pool: &mut NodePool,
-                     leaves: &[Node],
-                     maxbits: i32) -> Vec<[Option<*mut Node>; 2]> {
+fn init_lists(pool: &mut NodePool,
+              leaves: &[Node],
+              maxbits: i32) -> Vec<[Option<Rc<RefCell<Node>>>; 2]> {
     let node0 = get_free_node(None, maxbits, pool);
     let node1 = get_free_node(None, maxbits, pool);
-    init_node(leaves[0].weight, 1, None, node0);
-    init_node(leaves[1].weight, 2, None, node1);
-    iter::repeat([Some(node0), Some(node1)]).take(maxbits as usize).collect()
+    init_node(leaves[0].weight, 1, None, node0.clone());
+    init_node(leaves[1].weight, 2, None, node1.clone());
+    let mut result = Vec::new();
+    for _ in 0..maxbits {
+        result.push([Some(node0.clone()), Some(node1.clone())]);
+    }
+    result
 }
 
 /**
@@ -169,14 +179,14 @@ unsafe fn init_lists(pool: &mut NodePool,
  * last chain of the last list contains the amount of active leaves in each list.
  * chain: Chain to extract the bit length from (last chain from last list).
  */
-unsafe fn extract_bit_lengths(chain: Option<*mut Node>, leaves: &[Node], bitlengths: &mut [u32]) {
+fn extract_bit_lengths(chain: Option<Rc<RefCell<Node>>>, leaves: &[Node], bitlengths: &mut [u32]) {
     let mut node = chain;
-    while node.is_some() {
-        for i in 0..(*node.unwrap()).count {
+    while let Some(n) = node {
+        for i in 0..n.borrow().count {
             bitlengths[leaves[i as usize].count as usize] =
                 bitlengths[leaves[i as usize].count as usize] + 1;
         }
-        node = (*node.unwrap()).tail;
+        node = n.borrow().tail.clone();
     }
 }
 
@@ -247,7 +257,7 @@ pub unsafe fn length_limited_code_lengths(frequencies: &[usize],
 
     // Array of lists of chains. Each list requires only two lookahead chains at
     // a time, so each list is a array of two Node*'s.
-    let mut lists: Vec<[Option<*mut Node>; 2]> = init_lists(&mut pool, &leaves, maxbits);
+    let mut lists: Vec<[Option<Rc<RefCell<Node>>>; 2]> = init_lists(&mut pool, &leaves, maxbits);
 
     // In the last list, 2 * numsymbols - 2 active chains need to be created. Two
     // are already created in the initialization. Each BoundaryPM run creates one.
@@ -263,7 +273,7 @@ pub unsafe fn length_limited_code_lengths(frequencies: &[usize],
                     is_final);
     }
 
-    extract_bit_lengths(lists[maxbits as usize - 1][1], &leaves, bitlengths);
+    extract_bit_lengths(lists[maxbits as usize - 1][1].clone(), &leaves, bitlengths);
     false // OK.
 }
 
