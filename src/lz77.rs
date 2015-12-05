@@ -1,7 +1,9 @@
 //! Functions for basic LZ77 compression and utilities for the "squeeze" LZ77
 //! compression.
 
+use std::cell::RefCell;
 use std::mem::size_of;
+use std::rc::Rc;
 
 use libc::size_t;
 
@@ -468,10 +470,11 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
     // For quitting early.
     let mut chain_counter = MAX_CHAIN_HITS;
 
-    let mut hhead: *const i32 = h.head;
-    let mut hprev: *const u16 = h.prev;
-    let mut hhashval: *const i32 = h.hashval;
+    let mut hhead = h.head.clone();
+    let mut hprev = h.prev.clone();
+    let mut hhashval = h.hashval.clone();
     let mut hval: i32 = h.val;
+    let mut switched_hash: bool = false;
 
     if cfg!(feature = "longest-match-cache") {
         if try_get_from_longest_match_cache(s, pos, &mut limit, sublen, distance, length) {
@@ -501,8 +504,8 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
     assert!(hval < 65536);
 
     // During the whole loop, p == hprev[pp].
-    let mut pp: u16 = *hhead.offset(hval as isize) as u16;
-    let mut p: u16 = *hprev.offset(pp as isize);
+    let mut pp: u16 = hhead.borrow()[hval as usize] as u16;
+    let mut p: u16 = hprev.borrow()[pp as usize];
 
     assert_eq!(pp, hpos);
 
@@ -514,8 +517,8 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
         let mut currentlength: u16 = 0;
 
         assert!((p as usize) < WINDOW_SIZE);
-        assert_eq!(p, *hprev.offset(pp as isize));
-        assert_eq!(*hhashval.offset(p as isize), hval);
+        assert_eq!(p, hprev.borrow()[pp as usize]);
+        assert_eq!(hhashval.borrow()[p as usize], hval);
 
         if dist > 0 {
             assert!(pos < size);
@@ -586,26 +589,28 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
 
         #[cfg(feature = "hash-same-hash")]
         unsafe fn do_hash_same_hash(h: &Hash,
-                                    hhead: &mut *const i32,
-                                    hprev: &mut *const u16,
-                                    hhashval: &mut *const i32,
+                                    hhead: &mut Rc<RefCell<[i32; 65536]>>,
+                                    hprev: &mut Rc<RefCell<Vec<u16>>>,
+                                    hhashval: &mut Rc<RefCell<Vec<i32>>>,
                                     hval: &mut i32,
+                                    switched_hash: &mut bool,
                                     bestlength: u16,
                                     hpos: u16,
                                     p: u16) {
             // Switch to the other hash once this will be more efficient.
-            if *hhead != h.hash_same_hash.head2 && bestlength >= h.hash_same.same[hpos as usize] && h.hash_same_hash.val2 == *h.hash_same_hash.hashval2.offset(p as isize) {
+            if !*switched_hash && bestlength >= h.hash_same.same[hpos as usize] && h.hash_same_hash.val2 == h.hash_same_hash.hashval2.borrow()[p as usize] {
                 // Now use the hash that encodes the length and first byte.
-                *hhead = h.hash_same_hash.head2;
-                *hprev = h.hash_same_hash.prev2;
-                *hhashval = h.hash_same_hash.hashval2;
+                *hhead = h.hash_same_hash.head2.clone();
+                *hprev = h.hash_same_hash.prev2.clone();
+                *hhashval = h.hash_same_hash.hashval2.clone();
                 *hval = h.hash_same_hash.val2;
+                *switched_hash = true;
             }
         }
-        do_hash_same_hash(h, &mut hhead, &mut hprev, &mut hhashval, &mut hval, bestlength, hpos, p);
+        do_hash_same_hash(h, &mut hhead, &mut hprev, &mut hhashval, &mut hval, &mut switched_hash, bestlength, hpos, p);
 
         pp = p;
-        p = *hprev.offset(p as isize);
+        p = hprev.borrow_mut()[p as usize];
         if p == pp {
             // Uninited prev value.
             break;
@@ -720,6 +725,4 @@ pub unsafe fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend:
         }
         i += 1;
     }
-
-    hash::Hash::clean(hash);
 }

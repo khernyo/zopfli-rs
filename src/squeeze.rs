@@ -284,8 +284,6 @@ unsafe fn get_best_lengths(s: &mut BlockState,
     assert!(costs[blocksize] >= 0f32);
     result = costs[blocksize] as f64;
 
-    Hash::clean(hash);
-
     result
 }
 
@@ -358,8 +356,6 @@ unsafe fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usi
 
         pos += length as usize;
     }
-
-    Hash::clean(hash);
 }
 
 /// Calculates the entropy of the statistics
