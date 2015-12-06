@@ -495,8 +495,9 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
                 fn do_hash_same(_h: &Hash,
                                 _pos: usize,
                                 _limit: usize,
-                                _scan: &mut *const u8,
-                                _match: &mut *const u8,
+                                _array: &[u8],
+                                _scan: &mut usize,
+                                _match_: &mut usize,
                                 _dist: u32) {
                 }
 
@@ -542,10 +543,11 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
 
         #[cfg(not(feature = "hash-same-hash"))]
         fn do_hash_same_hash(_h: &Hash,
-                             _hhead: &mut *const i32,
-                             _hprev: &mut *const u16,
-                             _hhashval: &mut *const i32,
+                             _hhead: &mut Rc<RefCell<[i32; 65536]>>,
+                             _hprev: &mut Rc<RefCell<Vec<u16>>>,
+                             _hhashval: &mut Rc<RefCell<Vec<i32>>>,
                              _hval: &mut i32,
+                             _switched_hash: &mut bool,
                              _bestlength: u16,
                              _hpos: u16,
                              _p: u16) {
