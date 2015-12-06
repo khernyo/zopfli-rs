@@ -2,10 +2,7 @@
 //! compression.
 
 use std::cell::RefCell;
-use std::mem::size_of;
 use std::rc::Rc;
-
-use libc::size_t;
 
 #[cfg(feature = "longest-match-cache")]
 use super::cache;
@@ -294,46 +291,13 @@ pub fn verify_len_dist(data: &[u8], datasize: usize, pos: usize, dist: u16, leng
  * end is the last possible byte, beyond which to stop looking.
  * safe_end is a few (8) bytes before end, for comparing multiple bytes at once.
  */
-unsafe fn get_match(scan: *const u8,
-                    match_: *const u8,
-                    end: *const u8,
-                    safe_end: *const u8)
-                    -> *const u8 {
-    let mut scan = scan;
-    let mut match_ = match_;
-    if size_of::<size_t>() == 8 {
-        // 8 checks at once per array bounds check (size_t is 64-bit).
-        while scan < safe_end && *(scan as *const size_t) == *(match_ as *const size_t) {
-            scan = scan.offset(8);
-            match_ = match_.offset(8);
-        }
-    } else if size_of::<u32>() == 4 {
-        // 4 checks at once per array bounds check (unsigned int is 32-bit).
-        while scan < safe_end && *(scan as *const u32) == *(match_ as *const u32) {
-            scan = scan.offset(4);
-            match_ = match_.offset(4);
-        }
-    } else {
-        // do 8 checks at once per array bounds check.
-        while scan < safe_end && *scan == *match_ && *(scan.offset(1)) == *(match_.offset(1)) &&
-              *(scan.offset(2)) == *(match_.offset(2)) &&
-              *(scan.offset(3)) == *(match_.offset(3)) &&
-              *(scan.offset(4)) == *(match_.offset(4)) &&
-              *(scan.offset(5)) == *(match_.offset(5)) &&
-              *(scan.offset(6)) == *(match_.offset(6)) &&
-              *(scan.offset(7)) == *(match_.offset(7)) {
-            scan = scan.offset(8);
-            match_ = match_.offset(8);
+fn get_match(scan: &[u8], match_: &[u8]) -> usize {
+    for i in 0..scan.len() {
+        if scan[i] != match_[i] {
+            return i;
         }
     }
-
-    // The remaining few bytes.
-    while scan != end && *scan == *match_ {
-        scan = scan.offset(1);
-        match_ = match_.offset(1);
-    }
-
-    scan
+    return scan.len();
 }
 
 #[cfg(not(feature = "longest-match-cache"))]
@@ -498,8 +462,7 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
     if pos + limit > size {
         limit = size - pos;
     }
-    let arrayend: *const u8 = (&array[pos] as *const _).offset(limit as isize);
-    let arrayend_safe: *const u8 = arrayend.offset(-8);
+    let arrayend = pos + limit;
 
     assert!(hval < 65536);
 
@@ -523,11 +486,11 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
         if dist > 0 {
             assert!(pos < size);
             assert!(dist as usize <= pos);
-            let mut scan: *const u8 = &array[pos];
-            let mut match_: *const u8 = &array[pos - dist as usize];
+            let mut scan = pos;
+            let mut match_ = pos - dist as usize;
 
             // Testing the byte at position bestlength first, goes slightly faster.
-            if pos + bestlength as usize >= size || *scan.offset(bestlength as isize) == *match_.offset(bestlength as isize) {
+            if pos + bestlength as usize >= size || array[scan + bestlength as usize] == array[match_ + bestlength as usize] {
                 #[cfg(not(feature = "hash-same"))]
                 fn do_hash_same(_h: &Hash,
                                 _pos: usize,
@@ -538,28 +501,29 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
                 }
 
                 #[cfg(feature = "hash-same")]
-                unsafe fn do_hash_same(h: &Hash,
-                                       pos: usize,
-                                       limit: usize,
-                                       scan: &mut *const u8,
-                                       match_: &mut *const u8,
-                                       dist: u32) {
+                fn do_hash_same(h: &Hash,
+                                pos: usize,
+                                limit: usize,
+                                array: &[u8],
+                                scan: &mut usize,
+                                match_: &mut usize,
+                                dist: u32) {
                     let same0: u16 = h.hash_same.same[pos & WINDOW_MASK];
-                    if same0 > 2 && **scan == **match_ {
+                    if same0 > 2 && array[*scan] == array[*match_] {
                         let same1: u16 = h.hash_same.same[(pos - dist as usize) & WINDOW_MASK];
                         let mut same: u16 = if same0 < same1 { same0 } else { same1 };
                         if same as usize > limit {
                             same = limit as u16;
                         }
-                        *scan = (*scan).offset(same as isize);
-                        *match_ = (*match_).offset(same as isize);
+                        *scan += same as usize;
+                        *match_ += same as usize;
                     }
                 }
-                do_hash_same(h, pos, limit, &mut scan, &mut match_, dist);
+                do_hash_same(h, pos, limit, array, &mut scan, &mut match_, dist);
 
-                scan = get_match(scan, match_, arrayend, arrayend_safe);
+                scan += get_match(&array[scan..arrayend], &array[match_..arrayend]);
                 // The found length.
-                currentlength = (scan as usize - &array[pos] as *const _ as usize) as u16;
+                currentlength = (scan - pos) as u16;
             }
 
             if currentlength > bestlength {
