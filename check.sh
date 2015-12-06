@@ -19,5 +19,5 @@ cargo test --release
 valgrind $ZOPFLI -c LICENSE.txt >/dev/null
 valgrind $ZOPFLI_RS_RELEASE -c LICENSE.txt >/dev/null
 
-time $ZOPFLI -c ./target/debug/zopfli-* >/dev/null
-time $ZOPFLI_RS_RELEASE -c ./target/debug/zopfli-* >/dev/null
+/usr/bin/time -v $ZOPFLI -c ./target/debug/zopfli-* >/dev/null
+/usr/bin/time -v $ZOPFLI_RS_RELEASE -c ./target/debug/zopfli-* >/dev/null
