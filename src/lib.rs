@@ -70,7 +70,7 @@ pub enum Format {
  *   be freed after use
  * outsize: pointer to the dynamic output array size
  */
-pub unsafe fn compress(options: &Options, output_type: Format, input: &[u8]) -> Vec<u8> {
+pub fn compress(options: &Options, output_type: Format, input: &[u8]) -> Vec<u8> {
     match output_type {
         Format::GZIP    => gzip_container::compress(options, input),
         Format::ZLIB    => zlib_container::compress(options, input),
@@ -99,7 +99,7 @@ mod test {
             verbose_more: false,
             ..Options::new()
         };
-        let compressed = unsafe { compress(&options, format, bytes) };
+        let compressed = compress(&options, format, bytes);
         let decompressed = match format {
             Format::GZIP => {
                 let mut d = GzDecoder::new(&compressed[..]).unwrap();
@@ -138,7 +138,7 @@ mod test {
             verbose_more: false,
             ..Options::new()
         };
-        let result = unsafe { compress(&options, format, data) };
+        let result = compress(&options, format, data);
         assert_eq!(result, compressed);
     }
 

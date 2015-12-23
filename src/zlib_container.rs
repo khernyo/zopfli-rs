@@ -39,7 +39,7 @@ fn adler32(data: &[u8]) -> u32 {
  *   be freed after use.
  * outsize: pointer to the dynamic output array size.
  */
-pub unsafe fn compress(options: &Options, input: &[u8]) -> Vec<u8> {
+pub fn compress(options: &Options, input: &[u8]) -> Vec<u8> {
     let mut bitpointer: u8 = 0;
     let checksum: u32 = adler32(input);
     let cmf: u32 = 120; // CM 8, CINFO 7. See zlib spec.
