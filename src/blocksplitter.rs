@@ -254,12 +254,12 @@ pub fn block_split_lz77(options: &Options,
  * npoints: pointer to amount of splitpoints, for the dynamic array. The amount of
  *   blocks is the amount of splitpoitns + 1.
  */
-pub unsafe fn block_split(options: &Options,
-                          in_: &[u8],
-                          instart: usize,
-                          inend: usize,
-                          maxblocks: usize,
-                          splitpoints: &mut Vec<usize>) {
+pub fn block_split(options: &Options,
+                   in_: &[u8],
+                   instart: usize,
+                   inend: usize,
+                   maxblocks: usize,
+                   splitpoints: &mut Vec<usize>) {
     let mut s = BlockState::new(options, instart, inend, false);
     let mut lz77splitpoints: Vec<usize> = Vec::new();
     let mut store = LZ77Store::new(in_);

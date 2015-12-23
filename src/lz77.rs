@@ -416,15 +416,15 @@ fn store_in_longest_match_cache(s: &mut BlockState,
  *     are used, the first 3 are ignored (the shortest length is 3. It is purely
  *     for convenience that the array is made 3 longer).
  */
-pub unsafe fn find_longest_match(s: &mut BlockState,
-                                 h: &Hash,
-                                 array: &[u8],
-                                 pos: usize,
-                                 size: usize,
-                                 limit: usize,
-                                 sublen: &mut Option<[u16; 259]>,
-                                 distance: &mut u16,
-                                 length: &mut u16) {
+pub fn find_longest_match(s: &mut BlockState,
+                          h: &Hash,
+                          array: &[u8],
+                          pos: usize,
+                          size: usize,
+                          limit: usize,
+                          sublen: &mut Option<[u16; 259]>,
+                          distance: &mut u16,
+                          length: &mut u16) {
     let mut limit = limit;
 
     let hpos: u16 = (pos & WINDOW_MASK) as u16;
@@ -554,15 +554,15 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
         }
 
         #[cfg(feature = "hash-same-hash")]
-        unsafe fn do_hash_same_hash(h: &Hash,
-                                    hhead: &mut Rc<RefCell<[i32; 65536]>>,
-                                    hprev: &mut Rc<RefCell<Vec<u16>>>,
-                                    hhashval: &mut Rc<RefCell<Vec<i32>>>,
-                                    hval: &mut i32,
-                                    switched_hash: &mut bool,
-                                    bestlength: u16,
-                                    hpos: u16,
-                                    p: u16) {
+        fn do_hash_same_hash(h: &Hash,
+                             hhead: &mut Rc<RefCell<[i32; 65536]>>,
+                             hprev: &mut Rc<RefCell<Vec<u16>>>,
+                             hhashval: &mut Rc<RefCell<Vec<i32>>>,
+                             hval: &mut i32,
+                             switched_hash: &mut bool,
+                             bestlength: u16,
+                             hpos: u16,
+                             p: u16) {
             // Switch to the other hash once this will be more efficient.
             if !*switched_hash && bestlength >= h.hash_same.same[hpos as usize] && h.hash_same_hash.val2 == h.hash_same_hash.hashval2.borrow()[p as usize] {
                 // Now use the hash that encodes the length and first byte.
@@ -608,7 +608,7 @@ pub unsafe fn find_longest_match(s: &mut BlockState,
 /// The result is placed in the ZopfliLZ77Store.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-pub unsafe fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend: usize, store: &mut LZ77Store) {
+pub fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend: usize, store: &mut LZ77Store) {
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
 
     if instart == inend {
