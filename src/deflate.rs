@@ -636,9 +636,9 @@ fn add_lz77_block(options: &Options,
     }
 }
 
-unsafe fn add_lz77_block_auto_type(options: &Options, is_final: bool, lz77: &LZ77Store,
-                                   lstart: usize, lend: usize, expected_data_size: usize,
-                                   bp: &mut u8, out: &mut Vec<u8>) {
+fn add_lz77_block_auto_type(options: &Options, is_final: bool, lz77: &LZ77Store,
+                            lstart: usize, lend: usize, expected_data_size: usize,
+                            bp: &mut u8, out: &mut Vec<u8>) {
     let uncompressedcost: f64 = calculate_block_size(lz77, lstart, lend, 0);
     let mut fixedcost: f64 = calculate_block_size(lz77, lstart, lend, 1);
     let dyncost: f64 = calculate_block_size(lz77, lstart, lend, 2);
@@ -692,7 +692,7 @@ unsafe fn add_lz77_block_auto_type(options: &Options, is_final: bool, lz77: &LZ7
  * This function will usually output multiple deflate blocks. If final is 1, then
  * the final bit will be set on the last block.
 */
-unsafe fn deflate_part(options: &Options, btype: i32, is_final: bool, input: &[u8], instart: usize, inend: usize, bp: &mut u8, out: &mut Vec<u8>) {
+fn deflate_part(options: &Options, btype: i32, is_final: bool, input: &[u8], instart: usize, inend: usize, bp: &mut u8, out: &mut Vec<u8>) {
     // byte coordinates rather than lz77 index
     let mut splitpoints_uncompressed: Vec<usize> = Vec::new();
     let mut splitpoints: Vec<usize> = Vec::new();
@@ -786,12 +786,12 @@ unsafe fn deflate_part(options: &Options, btype: i32, is_final: bool, input: &[u
  *   be freed after use.
  * outsize: pointer to the dynamic output array size.
  */
-pub unsafe fn deflate(options: &Options,
-                      btype: i32,
-                      is_final: bool,
-                      input: &[u8],
-                      bp: &mut u8,
-                      out: &mut Vec<u8>) {
+pub fn deflate(options: &Options,
+               btype: i32,
+               is_final: bool,
+               input: &[u8],
+               bp: &mut u8,
+               out: &mut Vec<u8>) {
     let offset: usize = out.len();
 
     let insize = input.len();
