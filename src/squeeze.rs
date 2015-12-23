@@ -1,8 +1,5 @@
 use std::io::Write;
 use std::iter;
-use std::ptr::null_mut;
-
-use libc::c_void;
 
 use deflate::calculate_block_size;
 use hash::{Hash, update_hash, warmup_hash};
@@ -92,52 +89,56 @@ fn clear_stat_freqs(stats: &mut SymbolStats) {
     stats.dists = [0; NUM_D];
 }
 
-/// Function that calculates a cost based on a model for the given LZ77 symbol.
-/// litlen: means literal symbol if dist is 0, length otherwise.
-type CostModelFun = unsafe fn (litlen: u32, dist: u32, context: *const c_void) -> f64;
+trait CostModel {
+    /// Function that calculates a cost based on a model for the given LZ77 symbol.
+    /// litlen: means literal symbol if dist is 0, length otherwise.
+    fn get_cost(&self, litlen: u32, dist: u32) -> f64;
+}
 
-/// Cost model which should exactly match fixed tree.
-/// type: CostModelFun
-unsafe fn get_cost_fixed(litlen: u32, dist: u32, _unused: *const c_void) -> f64 {
-    if dist == 0 {
-        if litlen <= 143 {
-            8f64
+struct FixedCostModel;
+impl CostModel for FixedCostModel {
+    /// Cost model which should exactly match fixed tree.
+    fn get_cost(&self, litlen: u32, dist: u32) -> f64 {
+        if dist == 0 {
+            if litlen <= 143 {
+                8f64
+            } else {
+                9f64
+            }
         } else {
-            9f64
+            let dbits: i32 = get_dist_extra_bits(dist as i32);
+            let lbits: i32 = get_length_extra_bits(litlen as i32);
+            let lsym: i32 = get_length_symbol(litlen as i32);
+            let mut cost: f64 = 0f64;
+            if lsym <= 279 {
+                cost += 7f64;
+            } else {
+                cost += 8f64;
+            }
+            cost += 5f64; // Every dist symbol has length 5.
+            cost + dbits as f64 + lbits as f64
         }
-    } else {
-        let dbits: i32 = get_dist_extra_bits(dist as i32);
-        let lbits: i32 = get_length_extra_bits(litlen as i32);
-        let lsym: i32 = get_length_symbol(litlen as i32);
-        let mut cost: f64 = 0f64;
-        if lsym <= 279 {
-            cost += 7f64;
-        } else {
-            cost += 8f64;
-        }
-        cost += 5f64; // Every dist symbol has length 5.
-        cost + dbits as f64 + lbits as f64
     }
 }
 
-/// Cost model based on symbol statistics.
-/// type: CostModelFun
-unsafe fn get_cost_stat(litlen: u32, dist: u32, context: *const c_void) -> f64 {
-    let stats: *const SymbolStats = context as *const SymbolStats;
-    if dist == 0 {
-        (*stats).ll_symbols[litlen as usize]
-    } else {
-        let lsym: i32 = get_length_symbol(litlen as i32);
-        let lbits: i32 = get_length_extra_bits(litlen as i32);
-        let dsym: i32 = get_dist_symbol(dist as i32);
-        let dbits: i32 = get_dist_extra_bits(dist as i32);
-        (*stats).ll_symbols[lsym as usize] + lbits as f64 + (*stats).d_symbols[dsym as usize] + dbits as f64
+impl CostModel for SymbolStats {
+    /// Cost model based on symbol statistics.
+    fn get_cost(&self, litlen: u32, dist: u32) -> f64 {
+        if dist == 0 {
+            self.ll_symbols[litlen as usize]
+        } else {
+            let lsym: i32 = get_length_symbol(litlen as i32);
+            let lbits: i32 = get_length_extra_bits(litlen as i32);
+            let dsym: i32 = get_dist_symbol(dist as i32);
+            let dbits: i32 = get_dist_extra_bits(dist as i32);
+            self.ll_symbols[lsym as usize] + lbits as f64 + self.d_symbols[dsym as usize] + dbits as f64
+        }
     }
 }
 
 /// Finds the minimum possible cost this cost model can return for valid length and
 /// distance symbols.
-unsafe fn get_cost_model_min_cost(costmodel: CostModelFun, costcontext: *const c_void) -> f64 {
+fn get_cost_model_min_cost(costmodel: &CostModel) -> f64 {
     let mut bestlength: i32 = 0; // length that has lowest cost in the cost model
     let mut bestdist: i32 = 0; // distance that has lowest cost in the cost model
 
@@ -151,7 +152,7 @@ unsafe fn get_cost_model_min_cost(costmodel: CostModelFun, costcontext: *const c
 
     let mut mincost: f64 = LARGE_FLOAT;
     for i in 3..259 {
-        let c: f64 = costmodel(i, 1, costcontext);
+        let c: f64 = costmodel.get_cost(i, 1);
         if c < mincost {
             bestlength = i as i32;
             mincost = c;
@@ -160,14 +161,14 @@ unsafe fn get_cost_model_min_cost(costmodel: CostModelFun, costcontext: *const c
 
     let mut mincost: f64 = LARGE_FLOAT;
     for i in 0..30 {
-        let c: f64 = costmodel(3, DSYMBOLS[i] as u32, costcontext);
+        let c: f64 = costmodel.get_cost(3, DSYMBOLS[i] as u32);
         if c < mincost {
             bestdist = DSYMBOLS[i];
             mincost = c;
         }
     }
 
-    costmodel(bestlength as u32, bestdist as u32, costcontext)
+    costmodel.get_cost(bestlength as u32, bestdist as u32)
 }
 
 /**
@@ -183,14 +184,13 @@ unsafe fn get_cost_model_min_cost(costmodel: CostModelFun, costcontext: *const c
  *     length to reach this byte from a previous byte.
  * returns the cost that was, according to the costmodel, needed to get to the end.
  */
-unsafe fn get_best_lengths(s: &mut BlockState,
-                           in_: &[u8],
-                           instart: usize,
-                           inend: usize,
-                           costmodel: CostModelFun,
-                           costcontext: *const c_void,
-                           length_array: &mut Vec<u16>)
-                           -> f64 {
+fn get_best_lengths(s: &mut BlockState,
+                    in_: &[u8],
+                    instart: usize,
+                    inend: usize,
+                    costmodel: &CostModel,
+                    length_array: &mut Vec<u16>)
+                    -> f64 {
     // Best cost to get here so far.
     let blocksize: usize = inend - instart;
     let mut leng: u16 = 0;
@@ -198,7 +198,7 @@ unsafe fn get_best_lengths(s: &mut BlockState,
     let mut sublen: Option<[u16; 259]> = Some([0; 259]);
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
     let result: f64;
-    let mincost: f64 = get_cost_model_min_cost(costmodel, costcontext);
+    let mincost: f64 = get_cost_model_min_cost(costmodel);
 
     if instart == inend {
         return 0f64;
@@ -221,7 +221,7 @@ unsafe fn get_best_lengths(s: &mut BlockState,
         update_hash(in_, i, inend, &mut hash);
 
         #[cfg(feature = "shortcut-long-repetitions")]
-        unsafe fn shortcut_long_repetitions(in_: &[u8], instart: usize, inend: usize, costmodel: CostModelFun, costcontext: *const c_void, length_array: &mut Vec<u16>, h: &mut Hash, i: &mut usize, j: &mut usize, costs: &mut Vec<f32>) {
+        fn shortcut_long_repetitions(in_: &[u8], instart: usize, inend: usize, costmodel: &CostModel, length_array: &mut Vec<u16>, h: &mut Hash, i: &mut usize, j: &mut usize, costs: &mut Vec<f32>) {
             use util::WINDOW_MASK;
             // If we're in a long repetition of the same character and have more than
             // ZOPFLI_MAX_MATCH characters before and after our position.
@@ -229,7 +229,7 @@ unsafe fn get_best_lengths(s: &mut BlockState,
                 && *i > instart + MAX_MATCH + 1
                 && *i + MAX_MATCH * 2 + 1 < inend
                 && h.hash_same.same[(*i - MAX_MATCH) & WINDOW_MASK] as usize > MAX_MATCH {
-                    let symbolcost: f64 = costmodel(MAX_MATCH as u32, 1, costcontext);
+                    let symbolcost: f64 = costmodel.get_cost(MAX_MATCH as u32, 1);
                     // Set the length to reach each one to ZOPFLI_MAX_MATCH, and the cost to
                     // the cost corresponding to that length. Doing this, we skip
                     // ZOPFLI_MAX_MATCH values to avoid calling ZopfliFindLongestMatch.
@@ -243,14 +243,14 @@ unsafe fn get_best_lengths(s: &mut BlockState,
                 }
         }
         #[cfg(not(feature = "shortcut-long-repetitions"))]
-        fn shortcut_long_repetitions(_in: &[u8], _instart: usize, _inend: usize, _costmodel: CostModelFun, _costcontext: *const c_void, _length_array: &Vec<u16>, _h: &Hash, _i: &usize, _j: &usize, _costs: &Vec<f32>) { }
-        shortcut_long_repetitions(in_, instart, inend, costmodel, costcontext, length_array, &mut hash, &mut i, &mut j, &mut costs);
+        fn shortcut_long_repetitions(_in: &[u8], _instart: usize, _inend: usize, _costmodel: &CostModel, _length_array: &Vec<u16>, _h: &Hash, _i: &usize, _j: &usize, _costs: &Vec<f32>) { }
+        shortcut_long_repetitions(in_, instart, inend, costmodel, length_array, &mut hash, &mut i, &mut j, &mut costs);
 
         find_longest_match(s, &hash, in_, i, inend, MAX_MATCH, &mut sublen, &mut dist, &mut leng);
 
         // Literal.
         if i + 1 <= inend {
-            let new_cost: f64 = costs[j] as f64 + costmodel(in_[i] as u32, 0, costcontext);
+            let new_cost: f64 = costs[j] as f64 + costmodel.get_cost(in_[i] as u32, 0);
             assert!(new_cost >= 0f64);
             if new_cost < costs[j + 1] as f64 {
                 costs[j + 1] = new_cost as f32;
@@ -268,7 +268,7 @@ unsafe fn get_best_lengths(s: &mut BlockState,
             }
 
             let new_cost: f64 = costs[j] as f64 +
-                                costmodel(k as u32, sublen.as_ref().unwrap()[k] as u32, costcontext);
+                                costmodel.get_cost(k as u32, sublen.as_ref().unwrap()[k] as u32);
             assert!(new_cost >= 0f64);
             if new_cost < costs[j + k] as f64 {
                 assert!(k <= MAX_MATCH);
@@ -310,7 +310,7 @@ fn trace_backwards(size: usize, length_array: &Vec<u16>, path: &mut Vec<u16>) {
     path.reverse();
 }
 
-unsafe fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usize, path: &Vec<u16>, store: &mut LZ77Store) {
+fn follow_path(s: &mut BlockState, in_: &[u8], instart: usize, inend: usize, path: &Vec<u16>, store: &mut LZ77Store) {
     let windowstart: usize = if instart > WINDOW_SIZE { instart - WINDOW_SIZE } else { 0 };
 
     let mut _total_length_test: usize = 0;
@@ -396,17 +396,16 @@ fn get_statistics(store: &LZ77Store, stats: &mut SymbolStats) {
  * returns the cost that was, according to the costmodel, needed to get to the end.
  *     This is not the actual cost.
  */
-unsafe fn lz77_optimal_run(s: &mut BlockState,
-                           in_: &[u8],
-                           instart: usize,
-                           inend: usize,
-                           path: &mut Vec<u16>,
-                           length_array: &mut Vec<u16>,
-                           costmodel: CostModelFun,
-                           costcontext: *const c_void,
-                           store: &mut LZ77Store)
-                           -> f64 {
-    let cost: f64 = get_best_lengths(s, in_, instart, inend, costmodel, costcontext, length_array);
+fn lz77_optimal_run(s: &mut BlockState,
+                    in_: &[u8],
+                    instart: usize,
+                    inend: usize,
+                    path: &mut Vec<u16>,
+                    length_array: &mut Vec<u16>,
+                    costmodel: &CostModel,
+                    store: &mut LZ77Store)
+                    -> f64 {
+    let cost: f64 = get_best_lengths(s, in_, instart, inend, costmodel, length_array);
     path.clear();
     trace_backwards(inend - instart, length_array, path);
     follow_path(s, in_, instart, inend, path, store);
@@ -414,17 +413,15 @@ unsafe fn lz77_optimal_run(s: &mut BlockState,
     cost
 }
 
-
-
 /// Calculates lit/len and dist pairs for given data.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-pub unsafe fn lz77_optimal<'a>(s: &mut BlockState,
-                               in_: &'a [u8],
-                               instart: usize,
-                               inend: usize,
-                               numiterations: i32,
-                               store: &mut LZ77Store<'a>) {
+pub fn lz77_optimal<'a>(s: &mut BlockState,
+                        in_: &'a [u8],
+                        instart: usize,
+                        inend: usize,
+                        numiterations: i32,
+                        store: &mut LZ77Store<'a>) {
     // Dist to get to here with smallest cost.
     let blocksize: usize = inend - instart;
     let mut length_array: Vec<u16> = iter::repeat(0).take(blocksize + 1).collect();
@@ -451,7 +448,7 @@ pub unsafe fn lz77_optimal<'a>(s: &mut BlockState,
     // run.
     for i in 0..numiterations {
         let mut currentstore = LZ77Store::new(in_);
-        lz77_optimal_run(s, in_, instart, inend, &mut path, &mut length_array, get_cost_stat, &stats as *const _ as *const c_void, &mut currentstore);
+        lz77_optimal_run(s, in_, instart, inend, &mut path, &mut length_array, &stats, &mut currentstore);
         cost = calculate_block_size(&currentstore, 0, currentstore.size, 2);
         if (*s.options).verbose_more || ((*s.options).verbose && cost < bestcost) {
             println_err!("Iteration {}: {} bit", i, cost as i32);
@@ -490,11 +487,11 @@ pub unsafe fn lz77_optimal<'a>(s: &mut BlockState,
 /// using with a fixed tree.
 /// If instart is larger than 0, it uses values before instart as starting
 /// dictionary.
-pub unsafe fn lz77_optimal_fixed(s: &mut BlockState,
-                                 in_: &[u8],
-                                 instart: usize,
-                                 inend: usize,
-                                 store: &mut LZ77Store) {
+pub fn lz77_optimal_fixed(s: &mut BlockState,
+                          in_: &[u8],
+                          instart: usize,
+                          inend: usize,
+                          store: &mut LZ77Store) {
     // Dist to get to here with smallest cost.
     let blocksize: usize = inend - instart;
     let mut length_array: Vec<u16> = iter::repeat(0).take(blocksize + 1).collect();
@@ -505,5 +502,5 @@ pub unsafe fn lz77_optimal_fixed(s: &mut BlockState,
 
     // Shortest path for fixed tree This one should give the shortest possible
     // result for fixed tree, no repeated runs are needed since the tree is known.
-    lz77_optimal_run(s, in_, instart, inend, &mut path, &mut length_array, get_cost_fixed, null_mut(), store);
+    lz77_optimal_run(s, in_, instart, inend, &mut path, &mut length_array, &FixedCostModel, store);
 }
