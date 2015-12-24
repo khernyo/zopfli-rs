@@ -1,8 +1,12 @@
 #![macro_use]
+#![cfg_attr(all(test, feature = "nightly"), feature(test))]
 
 #[macro_use]
 extern crate log;
 extern crate libc;
+
+#[cfg(all(feature = "nightly", test))]
+extern crate test;
 
 mod util;
 
@@ -84,7 +88,7 @@ pub unsafe fn compress(options: &Options, output_type: Format, input: &[u8]) -> 
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     extern crate flate2;
 
     use std::io::Read;

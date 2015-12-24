@@ -726,3 +726,22 @@ pub unsafe fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend:
         i += 1;
     }
 }
+
+#[cfg(all(feature = "nightly", test))]
+mod benches {
+    use test::{Bencher, black_box};
+
+    use super::get_match;
+    use util::MAX_MATCH;
+
+    #[bench]
+    fn bench_get_match(b: &mut Bencher) {
+        let x = black_box(0u8);
+        let y = black_box(0u8);
+        let s = vec![x; MAX_MATCH];
+        let m = vec![y; MAX_MATCH];
+        b.iter(|| {
+            unsafe { get_match(s.as_ptr(), m.as_ptr(), s.as_ptr().offset(MAX_MATCH as isize), s.as_ptr().offset(MAX_MATCH as isize - 8)) }
+        });
+    }
+}

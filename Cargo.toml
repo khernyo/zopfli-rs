@@ -43,3 +43,5 @@ shortcut-long-repetitions = ["hash-same"]
 # better result of ZopfliLZ77Greedy, but the effect this has on the optimal LZ77
 # varies from file to file.
 lazy-matching = []
+
+nightly = []
