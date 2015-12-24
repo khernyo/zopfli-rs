@@ -692,3 +692,22 @@ pub fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend: usize,
         i += 1;
     }
 }
+
+#[cfg(all(feature = "nightly", test))]
+mod benches {
+    use test::{Bencher, black_box};
+
+    use super::get_match;
+    use util::MAX_MATCH;
+
+    #[bench]
+    fn bench_get_match(b: &mut Bencher) {
+        let x = black_box(0u8);
+        let y = black_box(0u8);
+        let s = vec![x; MAX_MATCH];
+        let m = vec![y; MAX_MATCH];
+        b.iter(|| {
+            get_match(&s[..], &m[..])
+        });
+    }
+}
