@@ -282,6 +282,21 @@ pub fn verify_len_dist(data: &[u8], datasize: usize, pos: usize, dist: u16, leng
     }
 }
 
+fn get_match_ptr_8(scan: &[u8], match_: &[u8]) -> usize {
+    unsafe {
+        // 8 checks at once per array bounds check (size_t is 64-bit).
+        let end = scan.as_ptr().offset(scan.len() as isize);
+        let safe_end = end.offset(-8);
+        let mut s = scan.as_ptr();
+        let mut m = match_.as_ptr();
+        while s < safe_end && *(s as *const u64) == *(m as *const u64) {
+            s = s.offset(8);
+            m = m.offset(8);
+        }
+        s as usize - scan.as_ptr() as usize
+    }
+}
+
 /**
  * Finds how long the match of scan and match is. Can be used to find how many
  * bytes starting from scan, and from match, are equal. Returns the last byte
@@ -292,12 +307,14 @@ pub fn verify_len_dist(data: &[u8], datasize: usize, pos: usize, dist: u16, leng
  * safe_end is a few (8) bytes before end, for comparing multiple bytes at once.
  */
 fn get_match(scan: &[u8], match_: &[u8]) -> usize {
-    for i in 0..scan.len() {
-        if scan[i] != match_[i] {
-            return i;
-        }
+    let end = scan.len();
+    let mut i = get_match_ptr_8(scan, match_);
+
+    // The remaining few bytes.
+    while i < end && scan[i] == match_[i] {
+        i += 1;
     }
-    return scan.len();
+    i
 }
 
 #[cfg(not(feature = "longest-match-cache"))]
@@ -695,19 +712,163 @@ pub fn lz77_greedy(s: &mut BlockState, in_: &[u8], instart: usize, inend: usize,
 
 #[cfg(all(feature = "nightly", test))]
 mod benches {
+    use std::slice;
+
+    use libc::size_t;
+
     use test::{Bencher, black_box};
 
-    use super::get_match;
+    use super::{get_match, get_match_ptr_8};
     use util::MAX_MATCH;
 
-    #[bench]
-    fn bench_get_match(b: &mut Bencher) {
-        let x = black_box(0u8);
-        let y = black_box(0u8);
-        let s = vec![x; MAX_MATCH];
-        let m = vec![y; MAX_MATCH];
-        b.iter(|| {
-            get_match(&s[..], &m[..])
-        });
+    fn get_match_u64(scan: &[u8], match_: &[u8]) -> usize {
+        let mut i = 0;
+        unsafe {
+            // 4 checks at once per array bounds check (unsigned int is 32-bit).
+            let s = slice::from_raw_parts(scan.as_ptr() as *const u64, scan.len() / 8);
+            let m = slice::from_raw_parts(match_.as_ptr() as *const u64, match_.len() / 8);
+            while i < s.len() {
+                if s[i] != m[i] {
+                    break;
+                }
+                i += 1;
+            }
+            i *= 8;
+        }
+        i
     }
+
+    fn get_match_iter(scan: &[u8], match_: &[u8]) -> usize {
+        scan.iter().zip(match_).take_while(|&(a, b)| a == b).count()
+    }
+
+    fn get_match_iter_8(scan: &[u8], match_: &[u8]) -> usize {
+        unsafe {
+            let s = slice::from_raw_parts(scan.as_ptr() as *const u64, scan.len() / 8);
+            let m = slice::from_raw_parts(match_.as_ptr() as *const u64, match_.len() / 8);
+            s.iter().zip(m).take_while(|&(a, b)| a == b).count()
+        }
+    }
+
+    fn get_match_for(scan: &[u8], match_: &[u8]) -> usize {
+        for i in 0..scan.len() {
+            if scan[i] != match_[i] {
+                return i;
+            }
+        }
+        scan.len()
+    }
+
+    fn get_match_size_t_8(scan: &[u8], match_: &[u8]) -> usize {
+        let mut i = 0;
+        unsafe {
+            // 8 checks at once per array bounds check (size_t is 64-bit).
+            let s = slice::from_raw_parts(scan.as_ptr() as *const size_t, scan.len() / 8);
+            let m = slice::from_raw_parts(match_.as_ptr() as *const size_t, match_.len() / 8);
+            while i < s.len() {
+                if s[i] != m[i] {
+                    break;
+                }
+                i += 1;
+            }
+            i *= 8;
+        }
+        i
+    }
+
+    fn get_match_ptr_4(scan: &[u8], match_: &[u8]) -> usize {
+        unsafe {
+            // 4 checks at once per array bounds check (unsigned int is 32-bit).
+            let end = scan.as_ptr().offset(scan.len() as isize);
+            let safe_end = end.offset(-8);
+            let mut s = scan.as_ptr();
+            let mut m = match_.as_ptr();
+            while s < safe_end && *(s as *const u32) == *(m as *const u32) {
+                s = s.offset(4);
+                m = m.offset(4);
+            }
+            s as usize - scan.as_ptr() as usize
+        }
+    }
+
+    fn get_match_ptr_1_8(scan: &[u8], match_: &[u8]) -> usize {
+        unsafe {
+            // do 8 checks at once per array bounds check.
+            let end = scan.as_ptr().offset(scan.len() as isize);
+            let safe_end = end.offset(-8);
+            let mut s = scan.as_ptr();
+            let mut m = match_.as_ptr();
+            while s < safe_end && *s == *m && *(s.offset(1)) == *(m.offset(1)) &&
+                    *(s.offset(2)) == *(m.offset(2)) &&
+                    *(s.offset(3)) == *(m.offset(3)) &&
+                    *(s.offset(4)) == *(m.offset(4)) &&
+                    *(s.offset(5)) == *(m.offset(5)) &&
+                    *(s.offset(6)) == *(m.offset(6)) &&
+                    *(s.offset(7)) == *(m.offset(7)) {
+                s = s.offset(8);
+                m = m.offset(8);
+            }
+            s as usize - scan.as_ptr() as usize
+        }
+    }
+
+    fn get_match_u32(scan: &[u8], match_: &[u8]) -> usize {
+        let mut i = 0;
+        unsafe {
+            // 4 checks at once per array bounds check (unsigned int is 32-bit).
+            let s = slice::from_raw_parts(scan.as_ptr() as *const u32, scan.len() / 4);
+            let m = slice::from_raw_parts(match_.as_ptr() as *const u32, match_.len() / 4);
+            while i < s.len() {
+                if s[i] != m[i] {
+                    break;
+                }
+                i += 1;
+            }
+            i *= 4;
+        }
+        i
+    }
+
+    fn get_match_8(scan: &[u8], match_: &[u8]) -> usize {
+        let mut i = 0;
+        // do 8 checks at once per array bounds check.
+        let safe_end = scan.len() - 8;
+        while i < safe_end {
+            if scan[i] != match_[i] && scan[i + 1] != match_[i + 1] &&
+                    scan[i + 2] != match_[i + 2] && scan[i + 3] != match_[i + 3] &&
+                    scan[i + 4] != match_[i + 4] && scan[i + 5] != match_[i + 5] &&
+                    scan[i + 6] != match_[i + 6] && scan[i + 7] != match_[i + 7] {
+                break;
+            }
+            i += 8;
+        }
+        i
+    }
+
+    macro_rules! mk_bench {
+        ($bench_name:ident, $fn_name:ident) => {
+            #[bench]
+            fn $bench_name(b: &mut Bencher) {
+                let x = black_box(0u8);
+                let y = black_box(0u8);
+                let s = vec![x; MAX_MATCH];
+                let m = vec![y; MAX_MATCH];
+                b.iter(|| {
+                    $fn_name(&s[..], &m[..])
+                });
+            }
+        }
+    }
+
+    mk_bench!(bench_get_match, get_match);
+    mk_bench!(bench_get_match_size_t_8, get_match_size_t_8);
+    mk_bench!(bench_get_match_u64, get_match_u64);
+    mk_bench!(bench_get_match_u32, get_match_u32);
+    mk_bench!(bench_get_match_8, get_match_8);
+    mk_bench!(bench_get_match_iter, get_match_iter);
+    mk_bench!(bench_get_match_iter_8, get_match_iter_8);
+    mk_bench!(bench_get_match_for, get_match_for);
+    mk_bench!(bench_get_match_ptr_8, get_match_ptr_8);
+    mk_bench!(bench_get_match_ptr_4, get_match_ptr_4);
+    mk_bench!(bench_get_match_ptr_1_8, get_match_ptr_1_8);
 }
